@@ -12,6 +12,7 @@ from src.tangent import *
 from src.cotangent import *
 from src.vector_field import *
 from src.instances.manifolds import Vector, VectorSpace, EuclideanManifold
+from src.instances.lie_groups import GeneralLinearGroup
 import diffrax
 import abc
 
@@ -19,7 +20,8 @@ __all__ = ["FiberBundle",
            "VectorBundle",
            "ProductBundle",
            "TangentBundle",
-           "CotangentBundle",
+           "GlobalDifferential",
+           # "CotangentBundle",
            "FrameBundle"]
 
 ################################################################################################################
@@ -63,7 +65,7 @@ class FiberBundle(abc.ABC):
     pass
 
   @abc.abstractmethod
-  def local_trivialization(self, p: Point) -> "ProductBundle":
+  def get_local_trivialization_map(self, x: Element) -> Map["FiberBundle","ProductBundle"]:
     """Goes to the product space representation at p so that
     local_trivialization*proj_1 = self.pi.
 
@@ -71,7 +73,7 @@ class FiberBundle(abc.ABC):
       p: A point on the base manifold
 
     Returns:
-      (p, f), where p is in the base manifold and f is in the fiber
+      A mapping from the bundle to a product bundle that is locally the same.
     """
     pass
 
@@ -86,7 +88,7 @@ class FiberBundle(abc.ABC):
       True if p is in the manifold, False otherwise.
     """
     p = self.get_projection_map()(x)
-    UxF = self.local_trivialization(p)
+    UxF = self.get_local_trivialization_map(p).image
     return x in UxF
 
   def get_chart_for_point(self, x: Element) -> Chart:
@@ -99,9 +101,11 @@ class FiberBundle(abc.ABC):
     Returns:
       The chart that contains x in its domain
     """
-    p = self.get_projection_map()(x)
-    UxF = self.local_trivialization(p)
-    return UxF.get_chart_for_point(x)
+    lt = self.get_local_trivialization_map(x)
+    UxF = lt.image
+    lt_chart = UxF.get_chart_for_point(x)
+    chart = compose(lt_chart, lt)
+    return chart
 
 ################################################################################################################
 
@@ -132,16 +136,20 @@ class ProductBundle(CartesianProductManifold, FiberBundle):
     """
     return ProjectionMap(0, domain=self, image=self.manifold)
 
-  def local_trivialization(self, x: Element) -> "ProductBundle":
-    """Product bundles are globally trivial
+  def get_local_trivialization_map(self, x: Element) -> Map["ProductBundle","ProductBundle"]:
+    """Goes to the product space representation at p so that
+    local_trivialization*proj_1 = self.pi.
 
     Args:
       p: A point on the base manifold
 
     Returns:
-      A product bundle
+      A mapping from the bundle to a product bundle that is locally the same.
     """
-    return self
+    image = ProductBundle(self.manifold, self.fiber)
+    def phi(x, inverse=False):
+      return x
+    return Diffeomorphism(x, domain=self, image=image)
 
 ################################################################################################################
 
@@ -153,7 +161,7 @@ class TangentBundle(FiberBundle):
   Attributes:
     M: The manifold.
   """
-  Element = Tuple[Point,TangentVector]
+  Element = TangentVector # The tangent vector is evaluated at p!
 
   def __init__(self, M: Manifold):
     """Creates a new tangent space.
@@ -163,80 +171,116 @@ class TangentBundle(FiberBundle):
     """
     super().__init__(M, EuclideanManifold(dimension=M.dimension))
 
-  def get_projection_map(self) -> Map[Element,Point]:
+  def get_projection_map(self) -> Map[TangentVector,Point]:
     """Get the projection map that goes from the total space
     to the base space
 
     Returns:
       The map x -> p, x in E, p in M
     """
-    return ProjectionMap(0, domain=self, image=self.manifold)
+    return Map(lambda v: v.p, domain=self, image=self.manifold)
 
-  def local_trivialization(self, p: Point) -> CartesianProductManifold:
+  def get_local_trivialization_map(self, x: TangentVector) -> Map[TangentVector,Tuple[Point,Coordinate]]:
     """Goes to the product space representation at p so that
-    local_trivialization*proj_1 = self.pi
+    local_trivialization*proj_1 = self.pi.
 
     Args:
       p: A point on the base manifold
 
     Returns:
-      (p, f), where p is in the base manifold and f is in the fiber
+      A mapping from the bundle to a product bundle that is locally the same.
     """
-    TpM = TangentSpace(p, self.manifold)
-    return ProductBundle(self.manifold, TpM)
+    assert isinstance(x, TangentVector)
+    image = ProductBundle(self.manifold, EuclideanManifold(dimension=x.TpM.dimension))
+    def Phi(v, inverse=False):
+      if inverse == False:
+        return v.p, v.x
+      else:
+        p, x = v
+        return TangentVector(x, TangentSpace(p, self.manifold))
+    return Diffeomorphism(Phi, domain=self, image=image)
 
   def get_atlas(self):
     """Computations are done using local trivializations, so this
     shouldn't matter.
     """
     return None
+
+class GlobalDifferential(LinearMap[TangentBundle,TangentBundle]):
+  """The global differential is the union of all of the
+  differentials at every point on the manifold
+  """
+  def __init__(self, F: Map, M: Manifold):
+    """Creates a new global differential
+    Args:
+      M: The manifold.
+    """
+    self.F = F
+    self.manifold = M
+    self.domain = TangentBundle(M)
+    self.image = TangentBundle(apply_map_to_manifold(self.F, self.manifold))
+    super().__init__(self.__call__, domain=self.domain, image=self.image)
+
+  def __call__(self, x: TangentVector) -> TangentVector:
+    """Compute the differential of a tangent vector
+
+    Args:
+      x: A tangent vector on the tangent bundle
+
+    Returns:
+      The differential of F applied to x
+    """
+    assert isinstance(x, TangentVector)
+    return self.F.get_differential(x.p)(x)
 
 ################################################################################################################
 
-class CotangentBundle(FiberBundle):
-  """Cotangent bundle of a manifold.  Represents union of
-     tangent spaces at all points.
+# class CotangentBundle(FiberBundle):
+#   """Cotangent bundle of a manifold.  Represents union of
+#      tangent spaces at all points.
 
-  Attributes:
-    M: The manifold.
-  """
-  Element = Tuple[Point,CotangentVector]
+#   Attributes:
+#     M: The manifold.
+#   """
+#   Element = Tuple[Point,CotangentVector]
 
-  def __init__(self, M: Manifold):
-    """Creates a new tangent space.
+#   def __init__(self, M: Manifold):
+#     """Creates a new tangent space.
 
-    Args:
-      M: The manifold.
-    """
-    super().__init__(M, EuclideanManifold(dimension=M.dimension))
+#     Args:
+#       M: The manifold.
+#     """
+#     super().__init__(M, EuclideanManifold(dimension=M.dimension))
 
-  def get_projection_map(self) -> Map[Element,Point]:
-    """Get the projection map that goes from the total space
-    to the base space
+#   def get_projection_map(self) -> Map[Element,Point]:
+#     """Get the projection map that goes from the total space
+#     to the base space
 
-    Returns:
-      The map x -> p, x in E, p in M
-    """
-    return ProjectionMap(0, domain=self, image=self.manifold)
+#     Returns:
+#       The map x -> p, x in E, p in M
+#     """
+#     return ProjectionMap(0, domain=self, image=self.manifold)
 
-  def local_trivialization(self, p: Point) -> CartesianProductManifold:
-    """Goes to the product space representation at p so that
-    local_trivialization*proj_1 = self.pi
+#   def get_local_trivialization_map(self, x: Element) -> Map["CotangentBundle",ProductBundle]:
+#     """Goes to the product space representation at p so that
+#     local_trivialization*proj_1 = self.pi.
 
-    Args:
-      p: A point on the base manifold
+#     Args:
+#       p: A point on the base manifold
 
-    Returns:
-      (p, f), where p is in the base manifold and f is in the fiber
-    """
-    coTpM = CotangentSpace(p, self.manifold)
-    return ProductBundle(self.manifold, coTpM)
+#     Returns:
+#       A mapping from the bundle to a product bundle that is locally the same.
+#     """
+#     p = self.get_projection_map()(x)
+#     coTpM = CotangentSpace(p, self.manifold)
+#     image = ProductBundle(self.manifold, coTpM)
+#     return Map(lambda x: x, domain=self, image=image)
 
-  def get_atlas(self):
-    """Computations are done using local trivializations, so this
-    shouldn't matter.
-    """
-    return None
+#   def get_atlas(self):
+#     """Computations are done using local trivializations, so this
+#     shouldn't matter.
+#     """
+#     return None
 
 ################################################################################################################
 
@@ -267,7 +311,7 @@ class FrameBundle(FiberBundle, abc.ABC):
   Attributes:
     M: The manifold.
   """
-  Element = Tuple[Point,Frame]
+  Element = TangentBasis # Every element is a basis for the tangent space
 
   def __init__(self, M: Manifold):
     """Creates a new frame bundle.
@@ -275,29 +319,61 @@ class FrameBundle(FiberBundle, abc.ABC):
     Args:
       M: The manifold.
     """
-    pass
+    super().__init__(M, GeneralLinearGroup(dim=M.dimension))
 
-  def get_projection_map(self) -> Map[Element,Point]:
+  def get_projection_map(self) -> Map[TangentBasis,Point]:
     """Get the projection map that goes from the total space
     to the base space
 
     Returns:
       The map x -> p, x in E, p in M
     """
-    return ProjectionMap(0, domain=self, image=self.manifold)
+    return Map(lambda x: x.TpM.p, domain=self, image=self.manifold)
 
-  def local_trivialization(self, p: Point) -> CartesianProductManifold:
+  def get_local_trivialization_map(self, x: TangentBasis) -> Map[TangentBasis,Tuple[Point,Coordinate]]:
     """Goes to the product space representation at p so that
-    local_trivialization*proj_1 = self.pi
+    local_trivialization*proj_1 = self.pi.
 
     Args:
       p: A point on the base manifold
 
     Returns:
-      (p, f), where p is in the base manifold and f is in the fiber
+      A mapping from the bundle to a product bundle that is locally the same.
     """
-    TpM = TangentSpace(p, self.manifold)
-    return ProductBundle(self.manifold, TpM)
+    assert isinstance(x, TangentBasis)
+
+    mat_to_basis = MatrixColsToTangentBasis(x.TpM)
+
+    def Phi(inpt, inverse=False):
+      if inverse == False:
+        # basis to matrix
+        tangent_basis = inpt
+        p = tangent_basis.TpM.p
+        mat = mat_to_basis.inverse(tangent_basis)
+        return p, mat
+      else:
+        # matrix to basis
+        p, mat = inpt
+        basis = mat_to_basis(mat)
+        return basis
+
+    def Phi(inpt, inverse=False):
+      if inverse == False:
+        tangent_basis = inpt
+        p = tangent_basis.TpM.p
+        mat = jnp.stack([v.x for v in tangent_basis.basis], axis=1)
+        return p, mat
+      else:
+        p, mat = inpt
+        xs = jnp.split(mat, self.manifold.dimension, axis=1) # Split on cols
+
+        # Need to recreate this so that we can pass gradients through p!
+        TpM = TangentSpace(p, self.manifold)
+        basis = TangentBasis([TangentVector(x.ravel(), TpM) for x in xs], TpM)
+        return basis
+
+    image = ProductBundle(self.manifold, GeneralLinearGroup(dim=x.TpM.dimension))
+    return Diffeomorphism(Phi, domain=self, image=image)
 
   def get_atlas(self):
     """Computations are done using local trivializations, so this
@@ -319,76 +395,76 @@ class FrameBundle(FiberBundle, abc.ABC):
   #   # HERE IS THE PART TO FIGURE OUT
   #   def theta_g(p: Frame) -> Frame:
   #     # Turn the frame into a matrix
-  #     f = MatrixColsToList(TpM).inverse(F)
+  #     f = MatrixColsToTangentBasis(TpM).inverse(F)
 
   #     return g.multiplication_map(p, g)
   #   return Map(theta_g, domain=M, image=M)
 
 ################################################################################################################
 
-class CoFrameBundle(FiberBundle, abc.ABC):
-  """Co-frame bundle.  Represents the space of coframes that
-  we can have over a manifold.
+# class CoFrameBundle(FiberBundle, abc.ABC):
+#   """Co-frame bundle.  Represents the space of coframes that
+#   we can have over a manifold.
 
-  Attributes:
-    M: The manifold.
-  """
-  Element = Tuple[Point,CoFrame]
+#   Attributes:
+#     M: The manifold.
+#   """
+#   Element = Tuple[Point,CoFrame]
 
-  def __init__(self, M: Manifold):
-    """Creates a new Coframe bundle.
+#   def __init__(self, M: Manifold):
+#     """Creates a new Coframe bundle.
 
-    Args:
-      M: The manifold.
-    """
-    pass
+#     Args:
+#       M: The manifold.
+#     """
+#     pass
 
-  def get_projection_map(self) -> Map[Element,Point]:
-    """Get the projection map that goes from the total space
-    to the base space
+#   def get_projection_map(self) -> Map[Element,Point]:
+#     """Get the projection map that goes from the total space
+#     to the base space
 
-    Returns:
-      The map x -> p, x in E, p in M
-    """
-    return ProjectionMap(0, domain=self, image=self.manifold)
+#     Returns:
+#       The map x -> p, x in E, p in M
+#     """
+#     return ProjectionMap(0, domain=self, image=self.manifold)
 
-  def local_trivialization(self, p: Point) -> CartesianProductManifold:
-    """Goes to the product space representation at p so that
-    local_trivialization*proj_1 = self.pi
+#   def local_trivialization(self, p: Point) -> CartesianProductManifold:
+#     """Goes to the product space representation at p so that
+#     local_trivialization*proj_1 = self.pi
 
-    Args:
-      p: A point on the base manifold
+#     Args:
+#       p: A point on the base manifold
 
-    Returns:
-      (p, f), where p is in the base manifold and f is in the fiber
-    """
-    coTpM = CoTangentSpace(p, self.manifold)
-    return ProductBundle(self.manifold, coTpM)
+#     Returns:
+#       (p, f), where p is in the base manifold and f is in the fiber
+#     """
+#     coTpM = CoTangentSpace(p, self.manifold)
+#     return ProductBundle(self.manifold, coTpM)
 
-  def get_atlas(self):
-    """Computations are done using local trivializations, so this
-    shouldn't matter.
-    """
-    return None
+#   def get_atlas(self):
+#     """Computations are done using local trivializations, so this
+#     shouldn't matter.
+#     """
+#     return None
 
-  # def right_action_map(self, g: GeneralLinearGroup, F: CoFrame) -> Map[CoFrame,CoFrame]:
-  #   """The right action map of G on M.  This is set to
-  #      a translation map by default.
+#   # def right_action_map(self, g: GeneralLinearGroup, F: CoFrame) -> Map[CoFrame,CoFrame]:
+#   #   """The right action map of G on M.  This is set to
+#   #      a translation map by default.
 
-  #   Args:
-  #     g: An element of the Lie group
-  #     M: The manifold to apply an action on
+#   #   Args:
+#   #     g: An element of the Lie group
+#   #     M: The manifold to apply an action on
 
-  #   Returns:
-  #     theta_g
-  #   """
-  #   # HERE IS THE PART TO FIGURE OUT
-  #   def theta_g(p: CoFrame) -> CoFrame:
-  #     # Turn the frame into a matrix
-  #     f = MatrixColsToList(TpM).inverse(F)
+#   #   Returns:
+#   #     theta_g
+#   #   """
+#   #   # HERE IS THE PART TO FIGURE OUT
+#   #   def theta_g(p: CoFrame) -> CoFrame:
+#   #     # Turn the frame into a matrix
+#   #     f = MatrixColsToTangentBasis(TpM).inverse(F)
 
-  #     return g.multiplication_map(p, g)
-  #   return Map(theta_g, domain=M, image=M)
+#   #     return g.multiplication_map(p, g)
+#   #   return Map(theta_g, domain=M, image=M)
 
 ################################################################################################################
 

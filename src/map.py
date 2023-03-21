@@ -19,7 +19,9 @@ __all__ = ["Input",
            "InvertibleFunction",
            "InvertibleMap",
            "Diffeomorphism",
-           "compose"]
+           "compose",
+           "MatrixColsToTangentBasis",
+           "MatrixRowsToCotangentBasis"]
 
 Input = TypeVar("Input", bound=Point)
 Output = TypeVar("Output", bound=Point)
@@ -101,7 +103,6 @@ class Map(Generic[Input,Output]):
     from src.cotangent import Pullback
     return Pullback(self, p)
 
-
   def rank(self, p: Point) -> int:
     """Returns the rank of the map at p
 
@@ -147,7 +148,7 @@ class Map(Generic[Input,Output]):
     """
     return self.is_immersion(p) and self.is_submersion(p)
 
-class LinearMap(Map):
+class LinearMap(Map[Input,Output]):
   """A linear map.
 
   Attributes:
@@ -157,7 +158,7 @@ class LinearMap(Map):
   """
   pass
 
-class MultlinearMap(LinearMap):
+class MultlinearMap(LinearMap[Input,Output]):
   """A multilinear map.
 
   Attributes:
@@ -328,3 +329,62 @@ def compose(*maps: List[Map]) -> Map:
 
   # Construct the return map
   return map_class(composition, domain=maps[0].domain, image=maps[-1].image)
+
+################################################################################################################
+
+class MatrixColsToTangentBasis(Map[Matrix,List["TangentVector"]], _InvertibleMixin):
+  """Returns the columns of a matrix as a list.
+
+  Attributes:
+    TpM: The tangent space that this is a basis of.
+  """
+  def __init__(self, TpM: "TangentSpace"):
+    """Creates a new MatrixToList
+
+    Args:
+      TpM: The tangent space that this is a basis of.
+    """
+    from src.tangent import TangentVector, TangentBasis, TangentBasisSpace
+    from src.instances.lie_groups import GeneralLinearGroup
+    self.TpM = TpM
+
+    def f(v, inverse=False):
+      if inverse == True:
+        return jnp.stack([_v.x for _v in v.basis], axis=1)
+      else:
+        _vx = jnp.split(v, self.TpM.dimension, axis=1) # Split on cols
+        return TangentBasis([TangentVector(vx.ravel(), self.TpM) for vx in _vx], self.TpM)
+
+    domain = GeneralLinearGroup(dim=self.TpM.dimension)
+    image = TangentBasisSpace(self.TpM)
+    super().__init__(f, domain=domain, image=image)
+
+class MatrixRowsToCotangentBasis(Map[Matrix,List["TangentVector"]], _InvertibleMixin):
+  """Returns the rows of a matrix as a list.
+
+  Attributes:
+    TpM: The tangent space that this is a basis of.
+  """
+  def __init__(self, coTpM: "CotangentSpace"):
+    """Creates a new MatrixToList
+
+    Args:
+      coTpM: The cotangent space that this is a basis of.
+    """
+    assert 0
+    from src.cotangent import CotangentVector, CotangentBasisSpace
+    from src.instances.lie_groups import GeneralLinearGroup
+    self.coTpM = coTpM
+
+    def f(v, inverse=False):
+      if inverse == True:
+        return jnp.stack([_v.x for _v in v.basis], axis=0)
+      else:
+        _vx = jnp.split(v, self.coTpM.dimension, axis=0) # Split on rows
+        return CotangentBasis([CotangentVector(vx.ravel(), self.coTpM) for vx in _vx], self.coTpM)
+
+    domain = GeneralLinearGroup(dim=self.coTpM.dimension)
+    image = CotangentBasisSpace(self.coTpM)
+    super().__init__(f, domain=domain, image=image)
+
+################################################################################################################

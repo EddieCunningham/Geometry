@@ -12,12 +12,9 @@ import src.util as util
 
 __all__ = ["TangentVector",
            "TangentSpace",
-           "MatrixRowsToList",
-           "MatrixColsToList",
            "TangentBasis",
            "TangentBasisSpace",
-           "Differential",
-           "GlobalDifferential"]
+           "Differential"]
 
 class TangentVector(Vector):
   """A tangent vector on a Manifold
@@ -35,6 +32,7 @@ class TangentVector(Vector):
       x: The coordinates of the vector in the basis induced by a chart.
       TpM: The tangent space that the vector lives on.
     """
+    assert x.ndim == 1
     self.x = x
     self.TpM = TpM
     assert x.shape[0] == self.TpM.dimension
@@ -221,66 +219,6 @@ class TangentSpace(VectorSpace):
 
 ################################################################################################################
 
-from src.map import _InvertibleMixin
-
-class MatrixToList(Map[Matrix,List[TangentVector]], _InvertibleMixin):
-  """Returns the matrix as a list split along a specified index.
-
-  Attributes:
-    TpM: The tangent space that this is a basis of.
-  """
-  def __init__(self, TpM: TangentSpace, *, index: int):
-    """Creates a new MatrixToList
-
-    Args:
-      TpM: The tangent space that this is a basis of.
-      index: The index to split on
-    """
-    self.TpM = TpM
-    self.index = index
-
-    def f(v, inverse=False):
-      if inverse == False:
-        coords = jnp.stack([_v.x for _v in v])
-        return v.x
-      else:
-        _vx = jnp.split(v, self.TpM.dimension, axis=self.index)
-        return [TangentVector(vx, self.TpM) for vx in _vx]
-
-    domain = GeneralLinearGroup(dim=self.TpM.dimension)
-    image = TangentBasis(self.TpM)
-    super().__init__(f, domain=domain, image=image)
-
-class MatrixRowsToList(Map[Matrix,List[TangentVector]], _InvertibleMixin):
-  """Returns the rows of a matrix as a list.
-
-  Attributes:
-    TpM: The tangent space that this is a basis of.
-  """
-  def __init__(self, TpM: TangentSpace):
-    """Creates a new MatrixRowsToList
-
-    Args:
-      TpM: The tangent space that this is a basis of.
-    """
-    super().__init__(TpM, index=0)
-
-class MatrixColsToList(Map[Matrix,List[TangentVector]], _InvertibleMixin):
-  """Returns the columns of a matrix as a list.
-
-  Attributes:
-    TpM: The tangent space that this is a basis of.
-  """
-  def __init__(self, TpM: TangentSpace):
-    """Creates a new MatrixColsToList
-
-    Args:
-      TpM: The tangent space that this is a basis of.
-    """
-    super().__init__(TpM, index=1)
-
-################################################################################################################
-
 class TangentBasis(InvertibleMatrix):
   """A list of tangent vectors that forms a basis for the tangent space.
 
@@ -288,7 +226,10 @@ class TangentBasis(InvertibleMatrix):
     basis: A list of tangent vectors
     TpM: The tangent space that the vector lives on.
   """
-  def __init__(self, *Xs: List[TangentVector], TpM: TangentSpace):
+  def __init__(self, Xs: List[TangentVector], TpM: TangentSpace):
+    # Ensure that each vector is a part of the same tangent space
+    assert sum([X.TpM != TpM for X in Xs]) == 0
+
     self.basis = Xs
     self.TpM = TpM
     assert len(self.basis) == self.TpM.dimension
@@ -306,7 +247,7 @@ class TangentBasis(InvertibleMatrix):
     assert self.TpM == Y.TpM
 
     new_basis = [u + v for u, v in zip(self.basis, Y.basis)]
-    return TangentBasis(*new_basis, self.TpM)
+    return TangentBasis(new_basis, self.TpM)
 
   def __radd__(self, Y: "TangentBasis") -> "TangentBasis":
     """Add Y from the right
@@ -329,7 +270,7 @@ class TangentBasis(InvertibleMatrix):
       (aX)_p
     """
     if util.GLOBAL_CHECK:
-      (a in Reals(dimension=1))
+      a in Reals(dimension=1)
 
     new_basis = [a*v for v in self.basis]
     return TangentBasis(new_basis, self.TpM)
@@ -388,16 +329,22 @@ class TangentBasisSpace(VectorSpace):
     # We also need a chart for the tangent space.  Because we're
     # already using coordinates to represent the tangent vectors,
     # we don't need to do anything special.
+
     def chart_fun(v, inverse=False):
       if inverse == False:
-        coords = jnp.stack([_v.x for _v in v])
-        return v.x
+        out = jnp.stack([_v.x for _v in v], axis=1).ravel()
+        import pdb; pdb.set_trace()
+        return out
       else:
-        _vx = jnp.split(v, self.manifold.dimension, axis=0)
-        return [TangentVector(vx, self.TpM) for vx in _vx]
+        dim = self.manifold.dimension
+        v_square = v.reshape((dim, dim))
+        _vx = jnp.split(v_square, self.manifold.dimension, axis=1) # Get the columns
+        _vx_flat = [x.ravel() for x in _vx]
+        vectors = [TangentVector(vx, self.TpM) for vx in _vx_flat]
+        return TangentBasis(vectors, self.TpM)
 
     self.dimension = self.TpM.dimension**2
-    self.chart = Chart(chart_fun, domain=self, image=Reals(dimension=dim))
+    self.chart = Chart(chart_fun, domain=self, image=Reals(dimension=self.dimension))
     super().__init__(dimension=self.manifold.dimension, chart=self.chart)
 
   def __eq__(self, other: "TangentBasis") -> bool:
@@ -416,7 +363,7 @@ class TangentBasisSpace(VectorSpace):
 
 ################################################################################################################
 
-class Differential(LinearMap):
+class Differential(LinearMap[TangentVector,TangentVector]):
   """The differential of a smooth map.
 
   Attributes:
@@ -513,18 +460,3 @@ class Differential(LinearMap):
 
     # Get the Jacobian of the transformation
     return jax.jacobian(cm)(p_coords)
-
-class GlobalDifferential(LinearMap):
-  """The global differential is the union of all of the
-  differentials at every point on the manifold
-  """
-  def __init__(self, F: Map, M: Manifold):
-    """Creates a new global differential
-    Args:
-      M: The manifold.
-    """
-    self.F = F
-    self.manifold = M
-
-  def differential(self, p: Point) -> Differential:
-    return Differential(self.F, p)

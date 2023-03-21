@@ -13,7 +13,8 @@ __all__ = ["Point",
            "EmptySet",
            "Reals",
            "CartesianProductSet",
-           "set_cartesian_product"]
+           "set_cartesian_product",
+           "SetOfSections"]
 
 """Abstract point.  Will represent a point on a manifold."""
 Point = TypeVar("Point")
@@ -170,3 +171,32 @@ def set_cartesian_product(a: Set, b: Set) -> CartesianProductSet:
     Cartesian product AxB
   """
   return CartesianProductSet(a, b)
+
+################################################################################################################
+
+class SetOfSections(Set):
+  """The space sections over a bundle
+
+  Attributes:
+    bundle: The bundle we're defining sections over.
+  """
+  Element = "Section"
+
+  def __init__(self, bundle: "FiberBundle"):
+    """Create a new space of sections
+
+    Args:
+      bundle: The bundle we're defining over
+    """
+    self.bundle = bundle
+
+  def __contains__(self, p: Point) -> bool:
+    """Checks to see if p exists in this set.
+
+    Args:
+      p: Test point.
+
+    Returns:
+      True if p is in the set, False otherwise.
+    """
+    return isinstance(p, self.bundle.Element)

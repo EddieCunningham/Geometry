@@ -12,6 +12,8 @@ __all__ = ["Chart",
            "transition_map",
            "Atlas",
            "Manifold",
+           "SubImmersion",
+           "apply_map_to_manifold",
            "CartesianProductManifold",
            "manifold_cartesian_product"]
 
@@ -199,30 +201,38 @@ class SubImmersion(Manifold):
     F: The map
     M: The manifold
   """
-  def __init__(self, F: Map, M: Manifold):
+  def __init__(self, F: InvertibleMap, M: Manifold):
     """Creates a new subimmersion
 
     Args:
-      F: The map
+      _F: _F should be a regular python function with an inverse
       M: The manifold
     """
     assert F.domain == M
     self.F = F
     self.M = M
+    super().__init__(dimension=self.M.dimension)
 
+    self.F = InvertibleMap(self.F, domain=self.M, image=self)
+
+  def get_atlas(self):
+    """Return the atlas
+
+    Returns:
+      Atlas object
+    """
     charts = []
     for chart_M in self.M.atlas.charts:
       chart = compose(chart_M, self.F.get_inverse())
       charts.append(chart)
 
-    atlas = Atlas(charts)
-    super().__init__(atlas, dimension=dimension)
+    return Atlas(charts)
 
 def apply_map_to_manifold(F: InvertibleMap, M: Manifold) -> Manifold:
   """Create the manifold F(M).  F: M -> N
 
   Args:
-    F: A Map object
+    F: An invertible map
     M: A Manifold object
 
   Returns:

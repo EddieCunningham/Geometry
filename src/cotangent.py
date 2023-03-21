@@ -13,11 +13,9 @@ import src.util as util
 
 __all__ = ["CotangentVector",
            "CotangentSpace",
-           "DualBasis",
-           "DualBasisSpace",
-           "Pullback",
-           "PullbackCovectorField",
-           "pullback"]
+           "CotangentBasis",
+           "CotangentBasisSpace",
+           "Pullback"]
 
 class CotangentVector(LinearMap[Point,Coordinate]):
   """A covector on a Manifold
@@ -161,7 +159,7 @@ class CotangentBasis(InvertibleMatrix):
     basis: A list of cotangent vectors
     coTpM: The cotangent space that the vector lives on.
   """
-  def __init__(self, *Xs: List[CotangentVector], coTpM: CotangentSpace):
+  def __init__(self, Xs: List[CotangentVector], coTpM: CotangentSpace):
     self.basis = Xs
     self.coTpM = coTpM
     assert len(self.basis) == self.coTpM.dimension
@@ -225,6 +223,58 @@ class CotangentBasis(InvertibleMatrix):
       Negative of this basis
     """
     return -1.0*self
+
+class CotangentBasisSpace(VectorSpace):
+  """The space that a list of cotangent vectors that forms a basis lives in
+
+  Attributes:
+    p: The point where the space lives.
+    M: The manifold.
+  """
+  Element = List[CotangentVector]
+
+  def __init__(self, TpM: CotangentSpace):
+    """Creates a new cotangent space.
+
+    Args:
+      p: The point where the space lives.
+      M: The manifold.
+    """
+    self.TpM = TpM
+    self.p = self.TpM.p
+    self.manifold = self.TpM.manifold
+
+    # Keep track of the chart function for the manifold
+    self.phi = self.manifold.get_chart_for_point(self.p)
+
+    # We also need a chart for the cotangent space.  Because we're
+    # already using coordinates to represent the cotangent vectors,
+    # we don't need to do anything special.
+    def chart_fun(v, inverse=False):
+      if inverse == False:
+        coords = jnp.stack([_v.x for _v in v])
+        return v.x
+      else:
+        _vx = jnp.split(v, self.manifold.dimension, axis=1)
+        return [CotangentVector(vx, self.TpM) for vx in _vx]
+
+    self.dimension = self.coTpM.dimension**2
+    self.chart = Chart(chart_fun, domain=self, image=Reals(dimension=dim))
+    super().__init__(dimension=self.manifold.dimension, chart=self.chart)
+
+  def __eq__(self, other: "CotangentBasis") -> bool:
+    """Checks to see if 2 cotangent spaces are equal.
+
+    Args:
+      other: The other cotangent space.
+
+    Returns:
+      True if they are the same, False otherwise.
+    """
+    point_same = True
+    if util.GLOBAL_CHECK:
+      point_same = jnp.allclose(self.p, other.p)
+    return point_same and (self.manifold == other.manifold)
 
 ################################################################################################################
 
@@ -303,50 +353,3 @@ class Pullback(LinearMap):
 
     # Get the Jacobian of the transformation
     return jax.jacobian(cm)(p_coords)
-
-################################################################################################################
-
-class PullbackCovectorField(VectorField):
-  """The pullback of a covector field w through a diffeomorphism F
-
-  Attributes:
-    F: Map
-    w: Covector field
-  """
-  def __init__(self, F: Map, w: VectorField):
-    """Create a new pushforward vector field object
-
-    Args:
-      F: Diffeomorphism
-      w: Vector field
-    """
-    assert w.manifold == F.domain
-    self.F = F
-    self.w = w
-    super().__init__(M=F.image)
-
-  def __call__(self, q: Point) -> CotangentVector:
-    """Evaluate the vector field at a point.
-
-    Args:
-      q: Point on the manifold.
-
-    Returns:
-      Tangent vector at q.
-    """
-    p = self.F.inverse(q)
-    Xp = self.w(p)
-    dFp = self.F.get_pullback(p)
-    return dFp(Xp)
-
-def pullback(F: Map, w: VectorField) -> PullbackCovectorField:
-  """The pullback of w by F.  F^*(w)
-
-  Args:
-    F: A map
-    w: A covector field on defined on the image of F
-
-  Returns:
-    F^*(w)
-  """
-  return PullbackCovectorField(F, w)

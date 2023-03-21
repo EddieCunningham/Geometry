@@ -92,9 +92,9 @@ class AutonomousFrame(Frame):
     super().__init__(self.manifold)
 
     # Test that the vf is compatible with the manifold
-    x = jnp.zeros((self.manifold.dimension, self.manifold.dimension))
-    out = vf(x)
-    assert out.shape == x.shape
+    x = jnp.zeros(self.manifold.dimension)
+    out = self.vf(x)
+    assert out.shape == (self.manifold.dimension, self.manifold.dimension)
 
   def __call__(self, p: Point) -> TangentBasis:
     """Evaluate the vector field at a point.
@@ -112,8 +112,10 @@ class AutonomousFrame(Frame):
     # Get the vector field coordinates at p
     v_coords = self.vf(p_coords)
 
+    # Make sure to return the tangent basis space object instead of the coordinates
     TpM = TangentSpace(p, self.manifold)
-    return MatrixColsToList(TpM)(v_coords)
+    space = TangentBasisSpace(TpM)
+    return space.chart.inverse(v_coords)
 
 ################################################################################################################
 
