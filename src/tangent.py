@@ -13,7 +13,6 @@ import src.util as util
 __all__ = ["TangentVector",
            "TangentSpace",
            "TangentBasis",
-           "TangentBasisSpace",
            "Differential"]
 
 class TangentVector(Vector):
@@ -32,6 +31,8 @@ class TangentVector(Vector):
       x: The coordinates of the vector in the basis induced by a chart.
       TpM: The tangent space that the vector lives on.
     """
+    if x.ndim == 0:
+      x = x[None]
     assert x.ndim == 1
     self.x = x
     self.TpM = TpM
@@ -303,64 +304,6 @@ class TangentBasis(InvertibleMatrix):
     # Rows of the inverse matrix of coordinates
     pass
 
-class TangentBasisSpace(VectorSpace):
-  """The space that a list of tangent vectors that forms a basis lives in
-
-  Attributes:
-    p: The point where the space lives.
-    M: The manifold.
-  """
-  Element = List[TangentVector]
-
-  def __init__(self, TpM: TangentSpace):
-    """Creates a new tangent space.
-
-    Args:
-      p: The point where the space lives.
-      M: The manifold.
-    """
-    self.TpM = TpM
-    self.p = self.TpM.p
-    self.manifold = self.TpM.manifold
-
-    # Keep track of the chart function for the manifold
-    self.phi = self.manifold.get_chart_for_point(self.p)
-
-    # We also need a chart for the tangent space.  Because we're
-    # already using coordinates to represent the tangent vectors,
-    # we don't need to do anything special.
-
-    def chart_fun(v, inverse=False):
-      if inverse == False:
-        out = jnp.stack([_v.x for _v in v], axis=1).ravel()
-        import pdb; pdb.set_trace()
-        return out
-      else:
-        dim = self.manifold.dimension
-        v_square = v.reshape((dim, dim))
-        _vx = jnp.split(v_square, self.manifold.dimension, axis=1) # Get the columns
-        _vx_flat = [x.ravel() for x in _vx]
-        vectors = [TangentVector(vx, self.TpM) for vx in _vx_flat]
-        return TangentBasis(vectors, self.TpM)
-
-    self.dimension = self.TpM.dimension**2
-    self.chart = Chart(chart_fun, domain=self, image=Reals(dimension=self.dimension))
-    super().__init__(dimension=self.manifold.dimension, chart=self.chart)
-
-  def __eq__(self, other: "TangentBasis") -> bool:
-    """Checks to see if 2 tangent spaces are equal.
-
-    Args:
-      other: The other tangent space.
-
-    Returns:
-      True if they are the same, False otherwise.
-    """
-    point_same = True
-    if util.GLOBAL_CHECK:
-      point_same = jnp.allclose(self.p, other.p)
-    return point_same and (self.manifold == other.manifold)
-
 ################################################################################################################
 
 class Differential(LinearMap[TangentVector,TangentVector]):
@@ -378,15 +321,12 @@ class Differential(LinearMap[TangentVector,TangentVector]):
     p: The point where the differential is defined.
     """
     self.p = p
-    TpM = TangentSpace(p, M=F.domain)
-    TpN = TangentSpace(F(p), M=F.image)
-    super().__init__(f=F, domain=TpM, image=TpN)
+    self.q = F(self.p)
+    self.F = F
 
-    self.q = self.F(self.p)
-
-  @property
-  def F(self):
-    return self.f
+    self.TpM = TangentSpace(self.p, M=F.domain)
+    self.TpN = TangentSpace(self.q, M=F.image)
+    super().__init__(f=self.__call__, domain=self.TpM, image=self.TpN)
 
   def __call__(self, v: TangentVector) -> TangentVector:
     """Apply the differential to a tangent vector.
@@ -399,10 +339,6 @@ class Differential(LinearMap[TangentVector,TangentVector]):
     """
     assert isinstance(v, TangentVector)
 
-    # Needs to be at same point
-    if util.GLOBAL_CHECK:
-      assert jnp.allclose(self.p, v.p)
-
     # Recall that the vector coordinates are in the chart basis.
     # Need to use the coordinate map to get the coordinate change.
     F_hat = self.F.get_coordinate_map(self.p)
@@ -412,35 +348,7 @@ class Differential(LinearMap[TangentVector,TangentVector]):
 
     # Find the coordinates of the tangent vector on N
     q_hat, z = jax.jvp(F_hat.f, (p_hat,), (v.x,))
-
-    # psi = self.image.manifold.get_chart_for_point(self.q)
-    # q_hat_comp = psi(self.q)
-    # assert jnp.allclose(q_hat, q_hat_comp)
-
-    TpN = TangentSpace(self.q, self.F.image)
-    return TangentVector(z, TpN)
-
-  def get_dual_map(self) -> LinearMap:
-    """Get the dual map of the differential
-
-    Args:
-
-    Returns:
-      dF_p^*
-    """
-    dFp = self
-    class Transpose(LinearMap):
-
-      def __init__(self):
-        self.dFp = dFp
-        domain = CotangentSpace(self.dFp.q, self.dFp.image)
-        image = CotangentSpace(self.dFp.p, self.dFp.domain)
-        super().__init__(f=None, domain=TpM, image=TpN)
-
-      def __call__(self, w: Covector) -> Covector:
-        assert 0
-
-    return Transpose()
+    return TangentVector(z, self.TpN)
 
   def get_coordinates(self) -> Coordinate:
     """Return the coordinate representation of this map

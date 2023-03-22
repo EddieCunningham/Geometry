@@ -10,162 +10,123 @@ from src.map import *
 from src.tangent import *
 from src.cotangent import *
 from src.manifold import *
+from src.vector_field import *
 from src.instances.manifolds import *
+from src.instances.lie_groups import *
+from src.section import *
 import nux
 import src.util as util
-
-def liebniz_test(v: CotangentVector, f: Function, g: Function):
-  p = v.coTpM.p
-
-  fg = Map(lambda x: f(x)*g(x), domain=f.domain, image=f.image)
-
-  product_rule = f(p)*v(g) + g(p)*v(f)
-  ans = v(fg)
-  assert jnp.allclose(product_rule, ans)
-
-################################################################################################################
-
-def get_test_tangent_vector(M: Manifold, p: Point, rng_key):
-  assert p in M
-
-  # Construct the tangent space at p
-  coTpM = CotangentSpace(p, M)
-
-  # Get a tangent vector
-  x_coords = random.normal(rng_key, (M.dimension,))
-  v = CotangentVector(x_coords, coTpM)
-  return v
-
-def tangent_test(M: Manifold, p: Point, f: Function, g: Function, rng_key):
-  assert f.domain == M
-  assert g.domain == M
-
-  # Get a tangent vector and apply it to a function
-  k1, k2 = random.split(rng_key, 2)
-  v1 = get_test_tangent_vector(M, p, k1)
-  v2 = get_test_tangent_vector(M, p, k2)
-
-  # Construction
-  out = v1(f)
-
-  # Liebniz rule
-  liebniz_test(v1, f, g)
-
-  # Test that we can add vectors together correctly
-  v1f = v1(f)
-  v2f = v2(f)
-
-  v1pv2 = v1 + v2
-  v1pv2f = v1pv2(f)
-
-  assert jnp.allclose(v1pv2f, v1f + v2f)
-
-################################################################################################################
-
-def differential_test(M: Manifold, N: Manifold, p: Point, F: Map, G: Map, f: Function, g: Function, rng_key):
-  assert p in M
-  assert F.domain == M
-  assert F.image == N
-  assert f.domain == N
-  assert g.domain == N
-
-  # Construct the differential of F at p
-  dFp = Differential(F, p)
-
-  # Get a tangent vector
-  v = get_test_tangent_vector(M, p, rng_key)
-
-  # Apply it to a vector
-  dFp_v = dFp(v)
-
-  # Test Liebniz rule
-  liebniz_test(dFp_v, f, g)
-
-  # Composition test
-  q = F(p)
-  dGq = Differential(G, q)
-  dGq_dFp_v = dGq(dFp_v)
-
-  dGFp = Differential(compose(G, F), p)
-  dGFp_v = dGFp(v)
-
-  # Make sure that all of the coordinates line up
-  dFp_coords = dFp.get_coordinates()
-  dGq_coords = dGq.get_coordinates()
-  dGFp_coords = dGFp.get_coordinates()
-  assert jnp.allclose(dGFp_coords, dGq_coords@dFp_coords)
-
-  assert jnp.allclose(dGFp_v.x, dGq_dFp_v.x)
 
 ################################################################################################################
 
 def run_all():
-  from tests.manifold_tests import get_random_point
-  # jax.config.update('jax_disable_jit', True)
-
+  jax.config.update("jax_enable_x64", True)
   rng_key = random.PRNGKey(0)
 
-  M = EuclideanManifold(dimension=4)
-  N = EuclideanManifold(dimension=3)
-  p = get_random_point(M)
+  # Construct a manifold
+  M = Sphere(dim=4)
+  p = random.normal(rng_key, (5,)); p = p/jnp.linalg.norm(p)
 
-  f = Map(lambda x: jnp.linalg.norm(x), domain=M, image=Reals())
-  g = Map(lambda x: jax.nn.softmax(x).sum(), domain=M, image=Reals())
-  tangent_test(M, p, f, g, rng_key)
+  # Construct a basis for the tangent space
+  tangent_coords = random.normal(rng_key, (M.dim, M.dim))
+  TpM = TangentSpace(p, M)
+  basis = []
+  for coords in tangent_coords:
+    v = TangentVector(coords, TpM)
+    basis.append(v)
+  tangent_basis = TangentBasis(basis, TpM)
 
-  rng_key = random.PRNGKey(0)
-  def Fx(x):
-    matrix = random.normal(rng_key, ((3, 4)))
-    return matrix@x
-  F = Map(Fx, domain=M, image=N)
+  # Get the dual basis
+  cotangent_basis = CotangentBasis.from_tangent_basis(tangent_basis)
 
-  def Gx(x):
-    matrix = random.normal(rng_key, ((3, 3)))
-    return matrix@x
-  G = Map(Gx, domain=N, image=N)
+  # Check that the cotangent vectors pair with the tangent vectors
+  for i, v in enumerate(tangent_basis.basis):
+    for j, w in enumerate(cotangent_basis.basis):
+      out = w(v)
+      assert jnp.allclose(out, i==j)
 
-  f = Map(lambda x: jnp.linalg.norm(x), domain=N, image=Reals())
-  g = Map(lambda x: jax.nn.softmax(x).sum(), domain=N, image=Reals())
+  # Test cotangent vector fields
+  from tests.vector_field_tests import get_vector_field_fun
+  from src.instances.vector_fields import AutonomousVectorField, AutonomousCovectorField
+  key1, key2, key3 = random.split(rng_key, 3)
+  X = AutonomousVectorField(get_vector_field_fun(M.dimension, key1), M)
+  W = AutonomousCovectorField(get_vector_field_fun(M.dimension, key2), M)
+  v = X(p)
+  w = W(p)
+
+  # Make sure that we can apply vector fields to covector fields
+  assert jnp.allclose((W*X)(p), w(v))
 
 
-  differential_test(M, N, p, F, G, f, g, rng_key)
+  ############################################################
+  ############################################################
+  # Check the pullback map
 
-  # Test that the tangent bundle works as well
-  TM = CotangentBundle(M)
 
-  # The projection map should be a submersion
-  coTpM = CotangentSpace(p, M)
-  x_coords = jnp.arange(M.dimension) + 1.0
-  v = CotangentVector(x_coords, coTpM)
+  # Build a map to matrices
+  def _F(p):
+    out = random.normal(rng_key, (5, 5))*jnp.sin(p)
+    return out
+  N = GeneralLinearGroup(dim=5)
+  F = Map(_F, domain=M, image=N)
+  Fp = F(p)
 
-  assert TM.projection_map().is_submersion((p, v))
+  # Get a vector field over the output
+  W = AutonomousCovectorField(get_vector_field_fun(N.dimension, key2), N)
+  w = W(Fp)
 
-  # Try with something less trivial
-  M = Sphere(dim=3)
-  N = Sphere(dim=3)
-  p = p/jnp.linalg.norm(p)
-  f = Map(lambda x: jnp.linalg.norm(x), domain=M, image=Reals())
-  g = Map(lambda x: jax.nn.softmax(x).sum(), domain=M, image=Reals())
-  tangent_test(M, p, f, g, rng_key)
+  out1 = F.get_pullback(p)(w)(v)
+  out2 = w(F.get_differential(p)(v))
 
-  def on_sphere(x, inverse=False):
-    if inverse == False:
-      rphi = nux.CartesianToSpherical()(x[None])[0]
-      r, phi = rphi[...,:1], rphi[...,1:]
-      phi = phi + 0.1
-      rphi = jnp.concatenate([r, phi], axis=-1)
-      return nux.SphericalToCartesian()(rphi)[0][0]
-    else:
-      rphi = nux.CartesianToSpherical()(x[None])[0]
-      r, phi = rphi[...,:1], rphi[...,1:]
-      phi = phi - 0.1
-      rphi = jnp.concatenate([r, phi], axis=-1)
-      return nux.SphericalToCartesian()(rphi)[0][0]
+  assert jnp.allclose(out1, out2)
 
-  F = Diffeomorphism(on_sphere, domain=M, image=M)
-  differential_test(M, M, p, F, F, f, g, rng_key)
+  # Check that we can pullback covector fields
+  F_W = pullback(F, W)
+  out3 = F_W(p)(v)
 
+  assert jnp.allclose(out1, out3)
+
+  # Test some other identities
+  def _u(p):
+    out = random.normal(rng_key, (5, 5))@jnp.sin(p)
+    return out.sum()
+  u = Map(_u, domain=N, image=EuclideanManifold(dimension=1))
+
+  # Check that the derivation to get Proposition 11.25 checks out
+  check1 = pullback(F, u*W)(p)
+  check2 = Pullback(F, p)(u(Fp)*W(Fp))
+  assert jnp.allclose(check1.x, check2.x)
+  check3 = u(Fp)*Pullback(F, p)(W(Fp))
+  assert jnp.allclose(check1.x, check3.x)
+  check4 = u(Fp)*pullback(F, W)(p)
+  assert jnp.allclose(check1.x, check4.x)
+  check5 = (compose(u, F)*pullback(F, W))(p)
+  assert jnp.allclose(check1.x, check5.x)
+
+
+  # Test the differential of a scalar function
+  du = FunctionDifferential(u, N)
+  out1 = pullback(F, du)(p)
+  out2 = FunctionDifferential(compose(u, F), M)(p)
+
+  assert jnp.allclose(out1.x, out2.x)
+
+  ############################################################
+  # Proposition 11.45
+  key1, key2, key3 = random.split(rng_key, 3)
+  X = AutonomousVectorField(get_vector_field_fun(M.dimension, key1), M)
+  Y = AutonomousVectorField(get_vector_field_fun(M.dimension, key2), M)
+
+  # Need a closed covector field
+  u = Map(_u, domain=M, image=EuclideanManifold(dimension=1))
+  W = FunctionDifferential(u, M)
+
+  t1 = X*(W*Y)
+  t2 = Y*(W*X)
+  t3 = W*lie_bracket(X, Y)
+
+  assert jnp.allclose(t1(p) - t2(p), t3(p))
 
 if __name__ == "__main__":
   from debug import *
-  # run_all()
+  run_all()

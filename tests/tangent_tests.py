@@ -136,7 +136,7 @@ def run_all():
   x_coords = jnp.arange(M.dimension) + 1.0
   v = TangentVector(x_coords, TpM)
 
-  assert TM.get_projection_map().is_submersion((p, v))
+  assert TM.get_projection_map().is_submersion(v)
 
   # Try with something less trivial
   M = Sphere(dim=3)
