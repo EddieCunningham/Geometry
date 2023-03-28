@@ -11,12 +11,14 @@ from src.map import *
 from src.manifold import *
 from src.tangent import *
 from src.cotangent import *
+from src.tensor import *
 from src.vector_field import *
 from src.section import *
 import src.util as util
 
 __all__ = ["AutonomousVectorField",
            "AutonomousCovectorField",
+           "AutonomousTensorField",
            "AutonomousFrame",
            "AutonomousCoframe",
            "SimpleTimeDependentVectorField"]
@@ -206,6 +208,56 @@ class AutonomousCoframe(Coframe):
     # To go back to the tangent basis, use the inverse of a local trivialization
     lt_map = self.coframe_bundle.get_local_trivialization_map(p)
     return lt_map.inverse((p, v_coords))
+
+################################################################################################################
+
+class AutonomousTensorField(TensorField):
+  """A tensor field where we have a function to give us
+  the coordinates of tensors using whatever basis
+  we get from charts of the manifold.  This is autonomous
+  so doesn't depend on t.
+
+  Attribues:
+    tf: The function that gives us tensors at points
+    M: Manifold
+  """
+  def __init__(self, tf: Callable[[Coordinate], Coordinate], tensor_type: TensorType, M: Manifold):
+    """Creates a new tensor field.
+
+    Args:
+      tf: Tensor field coordinate function.
+      M: The base manifold.
+    """
+    self.tf = tf
+    self.tensor_type = tensor_type
+    self.manifold = M
+    super().__init__(tensor_type, self.manifold)
+
+  def __call__(self, *Xs: Union[Point,List[Union[VectorField,CovectorField]]]) -> Union[Map,Tensor]:
+    """Evaluate the tensor field at a point, or evaluate it on vector/covector fields
+
+    Args:
+      Xs: Either a point or a list of vector/covector fields
+
+    Returns:
+      Tensor at a point, or a map over the manifold
+    """
+    if isinstance(Xs[0], VectorField) or isinstance(Xs[0], CovectorField):
+      return super().__call__(*Xs)
+
+    # Otherwise, the input must be a point
+    p = Xs[0]
+
+    # Get the coordinates for p
+    chart = self.manifold.get_chart_for_point(p)
+    p_coords = chart(p)
+
+    # Get the covector field coordinates at p
+    v_coords = self.tf(p_coords)
+
+    # Construct the tangent covector
+    TkTpM = TensorSpace(p, self.tensor_type, self.manifold)
+    return Tensor(v_coords, TkTpM=TkTpM)
 
 ################################################################################################################
 

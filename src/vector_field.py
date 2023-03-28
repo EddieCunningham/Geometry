@@ -14,8 +14,7 @@ from src.section import *
 from src.bundle import *
 import src.util as util
 
-__all__ = ["VectorField",
-           "TimeDependentVectorField",
+__all__ = ["TimeDependentVectorField",
            "PushforwardVectorField",
            "pushforward",
            "lie_bracket"]

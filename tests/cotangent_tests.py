@@ -16,12 +16,49 @@ from src.instances.lie_groups import *
 from src.section import *
 import nux
 import src.util as util
+from tests.vector_field_tests import get_vector_field_fun
+from src.instances.vector_fields import AutonomousVectorField, AutonomousCovectorField
+
+################################################################################################################
+
+def get_chart_fun(dimension, rng_key):
+  # Construct the vector field over M
+  import nux
+  flow = nux.GLOW(n_layers=2,
+           working_dim=16,
+           hidden_dim=32,
+           n_resnet_layers=2)
+
+  x = random.normal(rng_key, (100, dimension))
+  flow(x, rng_key=rng_key)
+  params = flow.get_params()
+
+  def apply_fun(x, inverse=False):
+    return flow(x[None], params=params, rng_key=rng_key, inverse=inverse)[0][0]
+
+  return apply_fun
 
 ################################################################################################################
 
 def run_all():
   jax.config.update("jax_enable_x64", True)
   rng_key = random.PRNGKey(0)
+
+  # Check that we can get coordinates correctly
+  chart = get_chart_fun(dimension=6, rng_key=rng_key)
+  Rn = EuclideanManifold(dimension=6, chart=chart)
+
+  p = random.normal(rng_key, (6,))
+  TpRn = TangentSpace(p, EuclideanManifold(dimension=6))
+
+  W = AutonomousCovectorField(get_vector_field_fun(Rn.dimension, rng_key), Rn)
+  w = W(p)
+
+  basis_vectors = TpRn.get_basis()
+  out = [w(v) for v in basis_vectors]
+  Id = Chart(lambda x, inverse=False: x, domain=Rn, image=Reals(Rn.dimension))
+  check = w.get_coordinates(Id)
+
 
   # Construct a manifold
   M = Sphere(dim=4)
@@ -46,8 +83,6 @@ def run_all():
       assert jnp.allclose(out, i==j)
 
   # Test cotangent vector fields
-  from tests.vector_field_tests import get_vector_field_fun
-  from src.instances.vector_fields import AutonomousVectorField, AutonomousCovectorField
   key1, key2, key3 = random.split(rng_key, 3)
   X = AutonomousVectorField(get_vector_field_fun(M.dimension, key1), M)
   W = AutonomousCovectorField(get_vector_field_fun(M.dimension, key2), M)
@@ -56,7 +91,6 @@ def run_all():
 
   # Make sure that we can apply vector fields to covector fields
   assert jnp.allclose((W*X)(p), w(v))
-
 
   ############################################################
   ############################################################

@@ -9,8 +9,6 @@ from src.manifold import *
 import src.util as util
 
 __all__ = ["EuclideanManifold",
-           "Vector",
-           "VectorSpace",
            "Sphere",
            "RealProjective"]
 
@@ -22,14 +20,21 @@ class EuclideanManifold(Manifold, Reals):
   """
   Element = Coordinate
 
-  def __init__(self, dimension: int):
+  def __init__(self, dimension: int, chart: Optional[Callable[[Point,bool],Coordinate]]=None):
     """Create Euclidean space
 
     Args:
       dimension: Dimension
+      chart: Optionally give a prefered choice of coordinates
     """
     self.dimension = dimension
     self.space = Reals(dimension=dimension)
+
+    if chart is None:
+      self.coordinate_function = lambda x, inverse=False: x
+    else:
+      self.coordinate_function = chart
+
     super().__init__(dimension=dimension)
 
   def get_atlas(self):
@@ -38,7 +43,7 @@ class EuclideanManifold(Manifold, Reals):
     Returns:
       Atlas object
     """
-    return Atlas([Chart(phi=lambda x, inverse=False: x, domain=self.space, image=self.space)])
+    return Atlas([Chart(phi=self.coordinate_function, domain=self.space, image=self.space)])
 
   def __contains__(self, p: Point) -> bool:
     """See if p is in this manifold
@@ -83,41 +88,6 @@ class EuclideanManifold(Manifold, Reals):
       V
     """
     return VectorSpace(dimension=self.dimension, basis=basis)
-
-################################################################################################################
-
-class Vector(Generic[Point]):
-  pass
-
-class VectorSpace(EuclideanManifold):
-  """An vector space will need a choice of coordinate function.
-
-  Attributes:
-    dim: Dimensionality
-  """
-  Element = Vector
-
-  def __init__(self, dimension: int, chart: Chart):
-    """Create Euclidean space
-
-    Args:
-      dimension: Dimension
-      chart: A chart for the vector space (choose a basis)
-    """
-    self.dimension = dimension
-    self.space = Reals(dimension=dimension)
-    self.chart = chart
-
-    # Skip the Euclidean manifold init
-    super().__init__(dimension=dimension)
-
-  def get_atlas(self):
-    """Return the atlas
-
-    Returns:
-      Atlas object
-    """
-    return Atlas([self.chart])
 
 ################################################################################################################
 

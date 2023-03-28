@@ -3,16 +3,19 @@ from typing import Callable, List, Optional, Generic, Tuple
 import src.util
 from functools import partial
 import jax
+import abc
 import jax.numpy as jnp
 from src.set import *
 from src.manifold import *
 from src.map import *
-from src.instances.manifolds import Vector, VectorSpace
+from src.vector import *
 import src.util as util
 
 __all__ = ["TangentVector",
            "TangentSpace",
            "TangentBasis",
+           "VectorField",
+           "Frame",
            "Differential"]
 
 class TangentVector(Vector):
@@ -31,31 +34,17 @@ class TangentVector(Vector):
       x: The coordinates of the vector in the basis induced by a chart.
       TpM: The tangent space that the vector lives on.
     """
-    if x.ndim == 0:
-      x = x[None]
-    assert x.ndim == 1
-    self.x = x
+    super().__init__(x, TpM)
     self.TpM = TpM
-    assert x.shape[0] == self.TpM.dimension
-    self.phi = self.TpM.phi
 
-  @property
-  def phi_inv(self):
-    """Inverse of the chart
-    """
-    return self.phi.get_inverse()
+    # Get the chart from the vector space
+    self.phi = self.V.phi
+    self.phi_inv = self.phi.get_inverse()
 
-  @property
-  def p(self):
-    """The point that the tangent vector is defined at.
-    """
-    return self.TpM.p
-
-  @property
-  def p_hat(self):
-    """The cooordinates for the point
-    """
-    return self.phi(self.p)
+    # Also keep track of the point that the tangent space is defined on
+    # and its coordinates
+    self.p = self.TpM.p
+    self.p_hat = self.phi(self.p)
 
   def __call__(self, f: Function) -> Coordinate:
     """Apply the tangent vector to f.
@@ -70,66 +59,16 @@ class TangentVector(Vector):
     f_phiinv = compose(f, self.phi_inv)
     return jax.jvp(f_phiinv.f, (self.p_hat,), (self.x,))[1]
 
-  def __add__(self, Y: "TangentVector") -> "TangentVector":
-    """Add two tangent vectors together
+  def get_coordinates(self, component_function: Chart) -> Coordinate:
+    """Get the coordinates of this vector in terms of coordinates function
 
     Args:
-      Y: Another tangent vector
+      component_function: A chart that gives coordinates
 
     Returns:
-      Xp + Yp
+      Coordinates of this vector for component_function
     """
-    # Can only add if they are a part of the same tangent space
-    assert self.TpM == Y.TpM
-
-    # Need to coordinates of Y in the basis we're using for X
-    y_coords = Y(self.phi)
-
-    # Add the coordinates together
-    return TangentVector(self.x + y_coords, self.TpM)
-
-  def __radd__(self, Y: "TangentVector") -> "TangentVector":
-    """Add Y from the right
-
-    Args:
-      Y: Another tangent vector
-
-    Returns:
-      X + Y
-    """
-    return self + Y
-
-  def __rmul__(self, a: float) -> "TangentVector":
-    """Tangent vectors support scalar multiplication
-
-    Args:
-      a: A scalar
-
-    Returns:
-      (aX)_p
-    """
-    if util.GLOBAL_CHECK:
-      (a in Reals(dimension=1))
-    return TangentVector(self.x*a, self.TpM)
-
-  def __sub__(self, Y: "TangentVector") -> "TangentVector":
-    """Subtract Y from this vector
-
-    Args:
-      Y: Another tangent vector
-
-    Returns:
-      X - Y
-    """
-    return self + -1.0*Y
-
-  def __neg__(self):
-    """Negate this vector
-
-    Returns:
-      Negative of this vector
-    """
-    return -1.0*self
+    return self(component_function)
 
 ################################################################################################################
 
@@ -154,19 +93,7 @@ class TangentSpace(VectorSpace):
 
     # Keep track of the chart function for the manifold
     self.phi = self.manifold.get_chart_for_point(self.p)
-
-    # We also need a chart for the tangent space.  Because we're
-    # already using coordinates to represent the tangent vectors,
-    # we don't need to do anything special.
-    def chart_fun(v, inverse=False):
-      if inverse == False:
-        return v.x
-      else:
-        return TangentVector(v, self)
-
-    self.dimension = self.manifold.dimension
-    self.chart = Chart(chart_fun, domain=self, image=Reals(dimension=self.dimension))
-    super().__init__(dimension=self.manifold.dimension, chart=self.chart)
+    super().__init__(dimension=self.manifold.dimension)
 
   def __eq__(self, other: "TangentSpace") -> bool:
     """Checks to see if 2 tangent spaces are equal.
@@ -182,33 +109,6 @@ class TangentSpace(VectorSpace):
       point_same = jnp.allclose(self.p, other.p)
     return point_same and (self.manifold == other.manifold)
 
-  def __contains__(self, v: TangentVector) -> bool:
-    """Checks to see if p exists in the manifold.  This is the case if
-       the point is in the domain of any chart
-
-    Args:
-      p: Test point.
-
-    Returns:
-      True if p is in the manifold, False otherwise.
-    """
-    type_check = isinstance(v, TangentVector)
-    val_check = v.TpM == self
-    return type_check and val_check
-
-  def get_basis(self) -> List[TangentVector]:
-    """Get a basis of vectors for the tangent space
-
-    Returns:
-      A list of tangent vectors that form a basis for the tangent space
-    """
-    eye = jnp.eye(self.dimension)
-    basis = []
-    for i in range(self.dimension):
-      v = TangentVector(eye[i], TpM=self)
-      basis.append(v)
-    return basis
-
   def get_dual_space(self) -> "CotangentSpace":
     """Get the dual space corresponding to the tangent space
 
@@ -220,80 +120,79 @@ class TangentSpace(VectorSpace):
 
 ################################################################################################################
 
-class TangentBasis(InvertibleMatrix):
+from src.section import Section
+class VectorField(Section[Point,TangentVector], abc.ABC):
+  """A vector field is a smooth section of the projection map from the
+  tangent bundle to the base manifold.  Takes a point and outputs
+  a tangent vector on the tangent space at the point.  Treat this
+  as a section of the tangent bundle, so will need to define s(p) in R^n
+  in order to use.
+
+  Attributes:
+    X: Function that assigns a tangent vector to every point on the manifold
+    M: The manifold that the vector field is defined on
+  """
+  def __init__(self, M: Manifold):
+    """Creates a new vector field.  Vector fields are sections of
+    the tangent bundle.
+
+    Args:
+      M: The base manifold.
+    """
+    self.manifold = M
+
+    # Construct the bundle
+    domain = M
+    from src.bundle import TangentBundle
+    image = TangentBundle(M)
+    pi = ProjectionMap(idx=0, domain=image, image=domain)
+    super().__init__(pi)
+
+  @abc.abstractmethod
+  def __call__(self, p: Point) -> TangentVector:
+    """Evaluate the vector field at a point.
+
+    Args:
+      p: Point on the manifold.
+
+    Returns:
+      Tangent vector at p.
+    """
+    pass
+
+  def __mul__(self, f: Map) -> Map:
+    """Multiply a vector field with a function.
+
+    Args:
+      f: A map from the manifold to R
+
+    Returns:
+      fX
+    """
+    assert isinstance(f, Map)
+    def fun(p: Point):
+      return self(p)(f)
+
+    return Map(fun, domain=self.manifold, image=Reals())
+
+################################################################################################################
+
+class TangentBasis(VectorSpaceBasis):
   """A list of tangent vectors that forms a basis for the tangent space.
 
   Attributes:
     basis: A list of tangent vectors
     TpM: The tangent space that the vector lives on.
   """
-  def __init__(self, Xs: List[TangentVector], TpM: TangentSpace):
-    # Ensure that each vector is a part of the same tangent space
-    assert sum([X.TpM != TpM for X in Xs]) == 0
+  def __init__(self, basis_vectors: List[TangentVector], TpM: TangentSpace):
+    """Create a new cotangent space basis object
 
-    self.basis = Xs
+    Args:
+      basis_vectors: A list of basis vectors
+      TpM: The vector space that this is a basis of
+    """
+    super().__init__(basis_vectors, TpM)
     self.TpM = TpM
-    assert len(self.basis) == self.TpM.dimension
-
-  def __add__(self, Y: "TangentBasis") -> "TangentBasis":
-    """Add two tangent space bases.
-
-    Args:
-      Y: Another tangent basis
-
-    Returns:
-      Xp + Yp
-    """
-    # Can only add if they are a part of the same tangent space
-    assert self.TpM == Y.TpM
-
-    new_basis = [u + v for u, v in zip(self.basis, Y.basis)]
-    return TangentBasis(new_basis, self.TpM)
-
-  def __radd__(self, Y: "TangentBasis") -> "TangentBasis":
-    """Add Y from the right
-
-    Args:
-      Y: Another tangent basis
-
-    Returns:
-      X + Y
-    """
-    return self + Y
-
-  def __rmul__(self, a: float) -> "TangentBasis":
-    """Tangent basis support scalar multiplication
-
-    Args:
-      a: A scalar
-
-    Returns:
-      (aX)_p
-    """
-    if util.GLOBAL_CHECK:
-      a in Reals(dimension=1)
-
-    new_basis = [a*v for v in self.basis]
-    return TangentBasis(new_basis, self.TpM)
-
-  def __sub__(self, Y: "TangentBasis") -> "TangentBasis":
-    """Subtract Y from this basis
-
-    Args:
-      Y: Another tangent basis
-
-    Returns:
-      X - Y
-    """
-    return self + -1.0*Y
-
-  def __neg__(self):
-    """Negate this basis
-
-    Returns:
-      Negative of this basis
-    """
-    return -1.0*self
 
   def get_dual_basis(self) -> "DualBasis":
     """Get the corresponding dual basis.
@@ -302,6 +201,43 @@ class TangentBasis(InvertibleMatrix):
       Corresponding cotangent basis
     """
     # Rows of the inverse matrix of coordinates
+    pass
+
+################################################################################################################
+
+class Frame(Section[Point,TangentBasis], abc.ABC):
+  """A frame is a collection of linearly independent vector fields
+  that form a basis for the tangent space.  Treat this as a section
+  of the frame bundle, so will need to define s(p) in GL(n,R) in order
+  to use.
+
+  Attributes:
+    M: Manifold
+  """
+  def __init__(self, M: Manifold):
+    """Creates a new frame
+
+    Args:
+      M: Manifold
+    """
+    self.manifold = M
+
+    domain = M
+    from src.bundle import FrameBundle
+    self.frame_bundle = FrameBundle(M)
+    pi = ProjectionMap(idx=0, domain=self.frame_bundle, image=domain)
+    super().__init__(pi)
+
+  @abc.abstractmethod
+  def __call__(self, p: Point) -> TangentBasis:
+    """Evaluate the vector field at a point.
+
+    Args:
+      p: Point on the manifold.
+
+    Returns:
+      Tangent vector at p.
+    """
     pass
 
 ################################################################################################################

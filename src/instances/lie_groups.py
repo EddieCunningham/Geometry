@@ -10,6 +10,7 @@ from src.map import *
 from src.manifold import *
 from src.lie_group import *
 from src.instances.manifolds import *
+from src.vector import *
 import src.util as util
 
 __all__ = ["RealLieGroup",

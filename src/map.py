@@ -156,7 +156,7 @@ class LinearMap(Map[Input,Output]):
   """
   pass
 
-class MultlinearMap(LinearMap[Input,Output]):
+class MultlinearMap(LinearMap[List[Input],Output]):
   """A multilinear map.
 
   Attributes:

@@ -11,13 +11,13 @@ from src.manifold import *
 from src.tangent import *
 from src.cotangent import *
 from src.vector_field import *
-from src.instances.manifolds import Vector, VectorSpace, EuclideanManifold
+from src.instances.manifolds import EuclideanManifold
+from src.vector import *
 from src.instances.lie_groups import GeneralLinearGroup
 import diffrax
 import abc
 
 __all__ = ["FiberBundle",
-           "VectorBundle",
            "ProductBundle",
            "TangentBundle",
            "GlobalDifferential",
@@ -289,26 +289,6 @@ class CotangentBundle(FiberBundle):
     return None
 
 ################################################################################################################
-
-class VectorBundle(FiberBundle, abc.ABC):
-  """A fiber bundle where the fiber is R^k.  This is still an abstract
-  class because we need a projection map and local trivialization.
-
-  Attributes:
-    F: The fiber F.
-    M: The base space.
-    E: The total space which looks looks like MxF around points.
-    pi: Projection map from E to M.
-  """
-  Element = Tuple[Point,Coordinate]
-
-  def __init__(self, M: Manifold, k: int):
-    """Creates a new vector bundle object.
-
-    Args:
-      M: The manifold.
-    """
-    super().__init__(M, EuclideanManifold(dimension=k))
 
 class FrameBundle(FiberBundle, abc.ABC):
   """Frame bundle.  Represents the space of frames that

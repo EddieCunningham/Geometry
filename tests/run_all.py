@@ -8,6 +8,7 @@ from tests.lie_algebra_tests import run_all as run_all_lie_algebra
 from tests.flow_tests import run_all as run_all_flow
 from tests.bundle_tests import run_all as run_all_bundle
 from tests.cotangent_tests import run_all as run_all_cotangent
+from tests.tensor_tests import run_all as run_all_tensor
 import src.util as util
 import jax
 
@@ -24,3 +25,4 @@ if __name__ == "__main__":
   run_all_flow()
   run_all_bundle()
   run_all_cotangent()
+  run_all_tensor()

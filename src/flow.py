@@ -9,6 +9,7 @@ from src.set import *
 from src.map import *
 from src.manifold import *
 from src.tangent import *
+from src.section import *
 from src.vector_field import *
 import src.util as util
 import diffrax

@@ -3,20 +3,26 @@ from typing import Callable, List, Optional
 import src.util
 from functools import partial
 import jax
+import abc
 import jax.numpy as jnp
 from src.set import *
 from src.manifold import *
 from src.map import *
 from src.tangent import *
-from src.instances.manifolds import Vector, VectorSpace
+from src.vector import *
 import src.util as util
 
 __all__ = ["CotangentVector",
            "CotangentSpace",
            "CotangentBasis",
-           "Pullback"]
+           "CovectorField",
+           "Coframe",
+           "PullbackCovectorField",
+           "FunctionDifferential",
+           "Pullback",
+           "pullback"]
 
-class CotangentVector(LinearMap[TangentVector,Coordinate]):
+class CotangentVector(Vector, LinearMap[TangentVector,Coordinate]):
   """A covector on a Manifold
 
   Attributes:
@@ -27,27 +33,20 @@ class CotangentVector(LinearMap[TangentVector,Coordinate]):
     """Creates a new covector.
 
     Args:
-      x: The coordinates of the vector in the basis induced by a chart.
-      coTpM: The tangent space that the vector lives on.
+      x: The coordinates of the covector in the basis induced by a chart.
+      coTpM: The cotangent space that the covector lives on.
     """
-    self.x = x
+    super().__init__(x, coTpM)
     self.coTpM = coTpM
-    assert x.shape[0] == self.coTpM.dimension
-    self.phi = self.coTpM.phi
 
-  @property
-  def phi_inv(self):
-    return self.phi.get_inverse()
+    # Get the chart from the vector space
+    self.phi = self.V.phi
+    self.phi_inv = self.phi.get_inverse()
 
-  @property
-  def p(self):
-    """The point that the covector is defined at.
-    """
-    return self.coTpM.p
-
-  @property
-  def p_hat(self):
-    return self.phi(self.p)
+    # Also keep track of the point that the tangent space is defined on
+    # and its coordinates
+    self.p = coTpM.p
+    self.p_hat = self.phi(self.p)
 
   def __call__(self, v: TangentVector) -> Coordinate:
     """Apply the covector to a tangent vector v
@@ -59,72 +58,29 @@ class CotangentVector(LinearMap[TangentVector,Coordinate]):
       w(v)
     """
     assert isinstance(v, TangentVector)
-    assert v.TpM.get_dual_space() == self.coTpM
+    # assert v.TpM.get_dual_space() == self.coTpM
 
     # Evaluate the vector components in this basis
-    v_coords = v(self.phi)
+    v_coords = v.get_coordinates(self.phi)
     return jnp.vdot(self.x, v_coords)
 
-  def __add__(self, Y: "CotangentVector") -> "CotangentVector":
-    """Add two tangent vectors together
+  def get_coordinates(self, component_function: Chart) -> Coordinate:
+    """Get the coordinates of this vector in terms of coordinates function
 
     Args:
-      Y: Another tangent vector
+      component_function: A chart that gives coordinates
 
     Returns:
-      Xp + Yp
+      Coordinates of this vector for component_function
     """
-    # Can only add if they are a part of the same tangent space
-    assert self.coTpM == Y.coTpM
+    # This is the inverse of the map from x_coords to component_function_coords
+    psiinv_phi = compose(component_function.get_inverse(), self.phi)
+    q = component_function(self.p)
+    _, vjp = jax.vjp(psiinv_phi.f, q)
+    coords, = vjp(self.x)
+    return coords
 
-    # Need to coordinates of Y in the basis we're using for X
-    y_coords = Y(self.phi)
-
-    # Add the coordinates together
-    return CotangentVector(self.x + y_coords, self.coTpM)
-
-  def __radd__(self, Y: "CotangentVector") -> "CotangentVector":
-    """Add Y from the right
-
-    Args:
-      Y: Another cotangent vector
-
-    Returns:
-      X + Y
-    """
-    return self + Y
-
-  def __rmul__(self, a: float) -> "CotangentVector":
-    """Cotangent vectors support scalar multiplication
-
-    Args:
-      a: A scalar
-
-    Returns:
-      (aX)_p
-    """
-    if util.GLOBAL_CHECK:
-      (a in Reals(dimension=1))
-    return CotangentVector(self.x*a, self.coTpM)
-
-  def __sub__(self, Y: "CotangentVector") -> "CotangentVector":
-    """Subtract Y from this vector
-
-    Args:
-      Y: Another cotangent vector
-
-    Returns:
-      X - Y
-    """
-    return self + -1.0*Y
-
-  def __neg__(self):
-    """Negate this vector
-
-    Returns:
-      Negative of this vector
-    """
-    return -1.0*self
+################################################################################################################
 
 class CotangentSpace(VectorSpace):
   """Cotangent space of a manifold.  Is defined at a point, T_p^*M
@@ -133,6 +89,8 @@ class CotangentSpace(VectorSpace):
     p: The point where the space lives.
     M: The manifold.
   """
+  Element = CotangentVector
+
   def __init__(self, p: Point, M: Manifold):
     """Creates a new cotangent space.
 
@@ -145,19 +103,7 @@ class CotangentSpace(VectorSpace):
 
     # Keep track of the chart function for the manifold
     self.phi = self.manifold.get_chart_for_point(self.p)
-
-    # We also need a chart for the tangent space.  Because we're
-    # already using coordinates to represent the tangent vectors,
-    # we don't need to do anything special.
-    def chart_fun(v, inverse=False):
-      if inverse == False:
-        return v.x
-      else:
-        return TangentVector(v, self)
-
-    self.dimension = self.manifold.dimension
-    self.chart = Chart(chart_fun, domain=self, image=Reals(dimension=self.dimension))
-    super().__init__(dimension=self.manifold.dimension, chart=self.chart)
+    super().__init__(dimension=self.manifold.dimension)
 
   def __eq__(self, other: "CotangentSpace") -> bool:
     """Checks to see if 2 cotangent spaces are equal.
@@ -187,19 +133,6 @@ class CotangentSpace(VectorSpace):
     val_check = v.coTpM == self
     return type_check and val_check
 
-  def get_basis(self) -> List[CotangentVector]:
-    """Get a basis of vectors for the cotangent space
-
-    Returns:
-      A list of cotangent vectors that form a basis for the cotangent space
-    """
-    eye = jnp.eye(self.dimension)
-    basis = []
-    for i in range(self.dimension):
-      v = CotangentVector(eye[i], coTpM=self)
-      basis.append(v)
-    return basis
-
   def get_dual_space(self) -> TangentSpace:
     """Get the dual space corresponding to the cotangent space
 
@@ -211,17 +144,22 @@ class CotangentSpace(VectorSpace):
 
 ################################################################################################################
 
-class CotangentBasis(InvertibleMatrix):
+class CotangentBasis(VectorSpaceBasis):
   """A list of cotangent vectors that forms a basis for the cotangent space.
 
   Attributes:
     basis: A list of cotangent vectors
     coTpM: The cotangent space that the vector lives on.
   """
-  def __init__(self, Xs: List[CotangentVector], coTpM: CotangentSpace):
-    self.basis = Xs
+  def __init__(self, basis_vectors: List[CotangentVector], coTpM: CotangentSpace):
+    """Create a new cotangent space basis object
+
+    Args:
+      basis_vectors: A list of basis vectors
+      coTpM: The vector space that this is a basis of
+    """
+    super().__init__(basis_vectors, coTpM)
     self.coTpM = coTpM
-    assert len(self.basis) == self.coTpM.dimension
 
   @staticmethod
   def from_tangent_basis(tangent_basis: TangentBasis) -> "CotangentBasis":
@@ -253,65 +191,147 @@ class CotangentBasis(InvertibleMatrix):
     co_lt_map = coframe_bundle.get_local_trivialization_map(p) # TODO: Whats the right thing to pass in here?
     return co_lt_map.inverse((p, inv_matrix))
 
-  def __add__(self, Y: "CotangentBasis") -> "CotangentBasis":
-    """Add two cotangent space bases.
+################################################################################################################
+
+from src.section import Section
+class CovectorField(Section[Point,CotangentVector], abc.ABC):
+  """A covector field is a smooth section of the projection map from the
+  cotangent bundle to the base manifold.  Takes a point and outputs
+  a tangent vector on the tangent space at the point.  Treat this
+  as a section of the tangent bundle, so will need to define s(p) in R^n
+  in order to use.
+
+  Attributes:
+    X: Function that assigns a tangent vector to every point on the manifold
+    M: The manifold that the vector field is defined on
+  """
+  def __init__(self, M: Manifold):
+    """Creates a new vector field.  Vector fields are sections of
+    the tangent bundle.
 
     Args:
-      Y: Another cotangent basis
-
-    Returns:
-      Xp + Yp
+      M: The base manifold.
     """
-    # Can only add if they are a part of the same cotangent space
-    assert self.coTpM == Y.coTpM
+    self.manifold = M
 
-    new_basis = [u + v for u, v in zip(self.basis, Y.basis)]
-    return CotangentBasis(*new_basis, self.coTpM)
+    # Construct the bundle
+    domain = M
+    from src.bundle import CotangentBundle
+    image = CotangentBundle(M)
+    pi = ProjectionMap(idx=0, domain=image, image=domain)
+    super().__init__(pi)
 
-  def __radd__(self, Y: "CotangentBasis") -> "CotangentBasis":
-    """Add Y from the right
+  @abc.abstractmethod
+  def __call__(self, p: Point) -> CotangentVector:
+    """Evaluate the covector field at a point.
 
     Args:
-      Y: Another cotangent basis
+      p: Point on the manifold.
 
     Returns:
-      X + Y
+      Cotangent vector at p.
     """
-    return self + Y
+    pass
 
-  def __rmul__(self, a: float) -> "CotangentBasis":
-    """cotangent basis support scalar multiplication
+  def __mul__(self, X: VectorField) -> Map:
+    """Fill the covector field with a vector field.  This
+    produces a map over tha manifold
 
     Args:
-      a: A scalar
+      X: A vector field
 
     Returns:
-      (aX)_p
+      w(X)
     """
-    if util.GLOBAL_CHECK:
-      (a in Reals(dimension=1))
+    assert isinstance(X, VectorField)
+    def fun(p: Point):
+      return self(p)(X(p))
+    return Map(fun, domain=self.manifold, image=Reals())
 
-    new_basis = [a*v for v in self.basis]
-    return CotangentBasis(new_basis, self.coTpM)
+################################################################################################################
 
-  def __sub__(self, Y: "CotangentBasis") -> "CotangentBasis":
-    """Subtract Y from this basis
+class PullbackCovectorField(CovectorField):
+  """The pullback of a covector field w through a diffeomorphism F
+
+  Attributes:
+    F: Map
+    w: Covector field
+  """
+  def __init__(self, F: Map, w: CovectorField):
+    """Create a new pushforward vector field object
 
     Args:
-      Y: Another cotangent basis
+      F: Diffeomorphism
+      w: Covector field
+    """
+    assert w.manifold == F.image
+    self.F = F
+    self.w = w
+    super().__init__(M=F.domain)
+
+  def __call__(self, p: Point) -> CotangentVector:
+    """Evaluate the vector field at a point.
+
+    Args:
+      q: Point on the manifold.
 
     Returns:
-      X - Y
+      Tangent vector at q.
     """
-    return self + -1.0*Y
+    wp = self.w(self.F(p))
+    dFp_ = self.F.get_pullback(p)
+    return dFp_(wp)
 
-  def __neg__(self):
-    """Negate this basis
+def pullback(F: Map, w: VectorField) -> PullbackCovectorField:
+  """The pullback of w by F.  F^*(w)
+
+  Args:
+    F: A map
+    w: A covector field on defined on the image of F
+
+  Returns:
+    F^*(w)
+  """
+  return PullbackCovectorField(F, w)
+
+################################################################################################################
+
+class FunctionDifferential(CovectorField):
+  """The differential of a real valued function
+
+  Attributes:
+    f: The real valued function
+    M: The manifold that the vector field is defined on
+  """
+  def __init__(self, f: Map[Point,Coordinate], M: Manifold):
+    assert f.image.dimension == 1
+    assert isinstance(f.image, Reals)
+    self.function = f
+    super().__init__(M)
+
+  def __call__(self, p: Point) -> CotangentVector:
+    """The differential at p is a covector so that df_p(v) = v_p(f)
+
+    Args:
+      p: Point on the manifold.
 
     Returns:
-      Negative of this basis
+      Differential at p.
     """
-    return -1.0*self
+    # p is in the domain of f
+
+    # Get the coordinate map for f at p
+    f_hat = self.function.get_coordinate_map(p)
+
+    # Get the coordinates for p
+    phi = self.domain.get_chart_for_point(p)
+    p_hat = phi(p)
+
+    # The coordinates change with a vjp
+    z = jax.grad(f_hat.f)(p_hat)
+
+    coTpM = CotangentSpace(p, self.domain)
+    return CotangentVector(z, coTpM)
 
 ################################################################################################################
 
@@ -379,3 +399,38 @@ class Pullback(LinearMap[CotangentVector,CotangentVector]):
 
     # Get the Jacobian of the transformation
     return jax.jacobian(cm)(p_coords).T
+
+################################################################################################################
+
+class Coframe(Section[Point,CotangentBasis], abc.ABC):
+  """A coframe is a collection of linearly independent covector fields
+  that form a basis for the cotangent space.
+
+  Attributes:
+    M: Manifold
+  """
+  def __init__(self, M: Manifold):
+    """Creates a new frame
+
+    Args:
+      M: Manifold
+    """
+    self.manifold = M
+
+    domain = M
+    from src.bundle import FrameBundle
+    self.coframe_bundle = CoFrameBundle(M)
+    pi = ProjectionMap(idx=0, domain=self.coframe_bundle, image=domain)
+    super().__init__(pi)
+
+  @abc.abstractmethod
+  def __call__(self, p: Point) -> CotangentBasis:
+    """Evaluate the vector field at a point.
+
+    Args:
+      p: Point on the manifold.
+
+    Returns:
+      Tangent vector at p.
+    """
+    pass

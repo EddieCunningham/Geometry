@@ -7,6 +7,7 @@ from src.set import *
 from src.map import *
 import abc
 import src.util as util
+import itertools
 
 __all__ = ["Chart",
            "transition_map",
@@ -248,22 +249,19 @@ class CartesianProductManifold(Manifold):
   comes from the charts of the sets we're multplying.
 
   Attributes:
-    manifold_a: Manifold a
-    manifold_b: Manifold b
+    Ms: The manifolds that we're multiplying
   """
-  Element = Tuple[Point,Point]
+  Element = List[Point]
 
-  def __init__(self, a: Manifold, b: Manifold):
-    """Create the cartesian product of a and b
+  def __init__(self, *Ms: List[Manifold]):
+    """Create the cartesian product of manifolds
 
     Args:
-      a: Set a
-      b: Set b
+      Ms: A list of manifolds
     """
-    self.manifold_a = a
-    self.manifold_b = b
-    dimension = self.manifold_a.dimension + self.manifold_b.dimension
-    super().__init__(dimension=dimension)
+    self.Ms = Ms
+    self.dimensions = [M.dimension for M in self.Ms]
+    super().__init__(dimension=sum(self.dimensions))
 
   def get_atlas(self) -> Atlas:
     """Construct the atlas for the cartesian product.  This involves
@@ -273,40 +271,37 @@ class CartesianProductManifold(Manifold):
     Attributes:
       atlas: Atlas providing coordinate representation.
     """
-    a_dim = self.manifold_a.dimension
-    dimension = self.manifold_a.dimension + self.manifold_b.dimension
+    new_charts = []
+    for charts in itertools.product(*[M.atlas.charts for M in self.Ms]):
 
-    # The atlas will have n_charts(a) * n_charts(b) charts
-    charts = []
-    for chart_a in self.manifold_a.atlas.charts:
-      for chart_b in self.manifold_b.atlas.charts:
+      def phi(x, inverse=False):
+        if inverse == False:
+          assert len(x) == len(charts)
+          coords = [chart(_x) for _x, chart in zip(x, charts)]
+          return jnp.concatenate(coords, axis=-1)
+        else:
+          # Split the coordinates
+          cum_dims = list(itertools.accumulate(self.dimensions))
+          split_indices = list(zip([0] + cum_dims[:-1], cum_dims))
+          coords = [x[start:end] for start, end in split_indices]
+          assert len(coords) == len(charts)
+          return [chart.inverse(coord) for coord, chart in zip(coords, charts)]
 
-        def phi(x, inverse=False):
-          if inverse == False:
-            p, v = x
-            p_coords, v_coords = chart_a(p), chart_b(v)
-            return jnp.concatenate([p_coords, v_coords], axis=-1)
-          else:
-            p_coords, v_coords = x[:a_dim], x[a_dim:]
-            p, v = chart_a.inverse(p_coords), chart_b.inverse(v_coords)
-            return (p, v)
+      domain = set_cartesian_product()
+      new_chart = Chart(phi=phi, domain=domain, image=Reals(dimension=self.dimension))
+      new_charts.append(new_chart)
 
-        domain = set_cartesian_product(chart_a.domain, chart_b.domain)
-        new_chart = Chart(phi=phi, domain=domain, image=Reals(dimension=dimension))
-        charts.append(new_chart)
+    return Atlas(new_charts)
 
-    return Atlas(charts)
-
-def manifold_cartesian_product(a: Manifold, b: Manifold) -> CartesianProductManifold:
-  """The cartesian product of two manifolds
+def manifold_cartesian_product(*Ms: List[Manifold]) -> CartesianProductManifold:
+  """The cartesian product of manifolds
 
   Args:
-    a: Manifold A
-    b: Manifold B
+    Ms: A list of manifolds
 
   Returns:
-    Cartesian product AxB
+    Cartesian product of Ms
   """
-  return CartesianProductManifold(a, b)
+  return CartesianProductManifold(*Ms)
 
 ################################################################################################################

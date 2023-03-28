@@ -10,7 +10,9 @@ from src.map import *
 from src.manifold import *
 from src.lie_group import *
 from src.tangent import *
+from src.vector import *
 from src.vector_field import *
+from src.section import *
 from src.instances.manifolds import *
 from src.instances.lie_groups import *
 import src.util as util

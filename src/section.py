@@ -9,20 +9,11 @@ import abc
 from src.set import *
 from src.map import *
 from src.manifold import *
-from src.tangent import *
-from src.cotangent import *
 import src.util as util
 
 __all__ = ["Section",
            "BundleHomomorphismSection",
-           "apply_bundle_homomorphism_to_section",
-           "VectorField",
-           "CovectorField",
-           "FunctionDifferential",
-           "Frame",
-           "Coframe",
-           "PullbackCovectorField",
-           "pullback"]
+           "apply_bundle_homomorphism_to_section"]
 
 class Section(Map[Input,Output], abc.ABC):
   """If pi: M -> N is a continuous map, then a section of pi is a continuous right inverse
@@ -99,7 +90,8 @@ class Section(Map[Input,Output], abc.ABC):
 
       def __call__(self, p: Input) -> Output:
         fp = self.lhs if self.is_float else self.lhs(p)
-        return fp*(self.X(p))
+        Xp = self.X(p)
+        return fp*Xp
 
     return SectionRHSProduct(self, self.pi)
 
@@ -113,35 +105,6 @@ class Section(Map[Input,Output], abc.ABC):
 
   def __sub__(self, Y: "Section") -> "Section":
     return self + -Y
-
-  def __mul__(self, f: Union[Map,"VectorField"]) -> Map:
-    """Multiply a vector field with a function.  Only something
-    we can do with vectors!  Defining it here so that the sums
-    of sections will have it as well.
-
-    Args:
-      f: A map from the manifold to R
-
-    Returns:
-      fX
-    """
-    from src.bundle import TangentBundle, CotangentBundle
-    in_TM = isinstance(self.pi.domain, TangentBundle)
-    in_coTM = isinstance(self.pi.domain, CotangentBundle)
-
-    if (not in_TM) and (not in_coTM):
-      assert 0, "This kind of section does not support this operation."
-
-    if in_TM:
-      assert isinstance(f, Map)
-      def fun(p: Point):
-        return self(p)(f)
-    else:
-      assert isinstance(f, VectorField)
-      def fun(p: Point):
-        return self(p)(f(p))
-
-    return Map(fun, domain=self.manifold, image=Reals())
 
 ################################################################################################################
 
@@ -185,241 +148,3 @@ def apply_bundle_homomorphism_to_section(F: Map, s: Section):
       s: A section of the bundle.
     """
     return BundleHomomorphismSection(F, s)
-
-################################################################################################################
-
-class VectorField(Section[Point,TangentVector], abc.ABC):
-  """A vector field is a smooth section of the projection map from the
-  tangent bundle to the base manifold.  Takes a point and outputs
-  a tangent vector on the tangent space at the point.  Treat this
-  as a section of the tangent bundle, so will need to define s(p) in R^n
-  in order to use.
-
-  Attributes:
-    X: Function that assigns a tangent vector to every point on the manifold
-    M: The manifold that the vector field is defined on
-  """
-  def __init__(self, M: Manifold):
-    """Creates a new vector field.  Vector fields are sections of
-    the tangent bundle.
-
-    Args:
-      M: The base manifold.
-    """
-    self.manifold = M
-
-    # Construct the bundle
-    domain = M
-    from src.bundle import TangentBundle
-    image = TangentBundle(M)
-    pi = ProjectionMap(idx=0, domain=image, image=domain)
-    super().__init__(pi)
-
-  @abc.abstractmethod
-  def __call__(self, p: Point) -> TangentVector:
-    """Evaluate the vector field at a point.
-
-    Args:
-      p: Point on the manifold.
-
-    Returns:
-      Tangent vector at p.
-    """
-    pass
-
-################################################################################################################
-
-class CovectorField(Section[Point,CotangentVector], abc.ABC):
-  """A covector field is a smooth section of the projection map from the
-  cotangent bundle to the base manifold.  Takes a point and outputs
-  a tangent vector on the tangent space at the point.  Treat this
-  as a section of the tangent bundle, so will need to define s(p) in R^n
-  in order to use.
-
-  Attributes:
-    X: Function that assigns a tangent vector to every point on the manifold
-    M: The manifold that the vector field is defined on
-  """
-  def __init__(self, M: Manifold):
-    """Creates a new vector field.  Vector fields are sections of
-    the tangent bundle.
-
-    Args:
-      M: The base manifold.
-    """
-    self.manifold = M
-
-    # Construct the bundle
-    domain = M
-    from src.bundle import CotangentBundle
-    image = CotangentBundle(M)
-    pi = ProjectionMap(idx=0, domain=image, image=domain)
-    super().__init__(pi)
-
-  @abc.abstractmethod
-  def __call__(self, p: Point) -> CotangentVector:
-    """Evaluate the covector field at a point.
-
-    Args:
-      p: Point on the manifold.
-
-    Returns:
-      Cotangent vector at p.
-    """
-    pass
-
-class FunctionDifferential(CovectorField):
-  """The differential of a real valued function
-
-  Attributes:
-    f: The real valued function
-    M: The manifold that the vector field is defined on
-  """
-  def __init__(self, f: Map[Point,Coordinate], M: Manifold):
-    assert f.image.dimension == 1
-    assert isinstance(f.image, Reals)
-    self.function = f
-    super().__init__(M)
-
-  def __call__(self, p: Point) -> CotangentVector:
-    """The differential at p is a covector so that df_p(v) = v_p(f)
-
-    Args:
-      p: Point on the manifold.
-
-    Returns:
-      Differential at p.
-    """
-    # p is in the domain of f
-
-    # Get the coordinate map for f at p
-    f_hat = self.function.get_coordinate_map(p)
-
-    # Get the coordinates for p
-    phi = self.domain.get_chart_for_point(p)
-    p_hat = phi(p)
-
-    # The coordinates change with a vjp
-    z = jax.grad(f_hat.f)(p_hat)
-
-    coTpM = CotangentSpace(p, self.domain)
-    return CotangentVector(z, coTpM)
-
-################################################################################################################
-
-class Frame(Section[Point,TangentBasis], abc.ABC):
-  """A frame is a collection of linearly independent vector fields
-  that form a basis for the tangent space.  Treat this as a section
-  of the frame bundle, so will need to define s(p) in GL(n,R) in order
-  to use.
-
-  Attributes:
-    M: Manifold
-  """
-  def __init__(self, M: Manifold):
-    """Creates a new frame
-
-    Args:
-      M: Manifold
-    """
-    self.manifold = M
-
-    domain = M
-    from src.bundle import FrameBundle
-    self.frame_bundle = FrameBundle(M)
-    pi = ProjectionMap(idx=0, domain=self.frame_bundle, image=domain)
-    super().__init__(pi)
-
-  @abc.abstractmethod
-  def __call__(self, p: Point) -> TangentBasis:
-    """Evaluate the vector field at a point.
-
-    Args:
-      p: Point on the manifold.
-
-    Returns:
-      Tangent vector at p.
-    """
-    pass
-
-################################################################################################################
-
-class Coframe(Section[Point,CotangentBasis], abc.ABC):
-  """A coframe is a collection of linearly independent covector fields
-  that form a basis for the cotangent space.
-
-  Attributes:
-    M: Manifold
-  """
-  def __init__(self, M: Manifold):
-    """Creates a new frame
-
-    Args:
-      M: Manifold
-    """
-    self.manifold = M
-
-    domain = M
-    from src.bundle import FrameBundle
-    self.coframe_bundle = CoFrameBundle(M)
-    pi = ProjectionMap(idx=0, domain=self.coframe_bundle, image=domain)
-    super().__init__(pi)
-
-  @abc.abstractmethod
-  def __call__(self, p: Point) -> CotangentBasis:
-    """Evaluate the vector field at a point.
-
-    Args:
-      p: Point on the manifold.
-
-    Returns:
-      Tangent vector at p.
-    """
-    pass
-
-################################################################################################################
-
-class PullbackCovectorField(CovectorField):
-  """The pullback of a covector field w through a diffeomorphism F
-
-  Attributes:
-    F: Map
-    w: Covector field
-  """
-  def __init__(self, F: Map, w: CovectorField):
-    """Create a new pushforward vector field object
-
-    Args:
-      F: Diffeomorphism
-      w: Covector field
-    """
-    assert w.manifold == F.image
-    self.F = F
-    self.w = w
-    super().__init__(M=F.domain)
-
-  def __call__(self, p: Point) -> CotangentVector:
-    """Evaluate the vector field at a point.
-
-    Args:
-      q: Point on the manifold.
-
-    Returns:
-      Tangent vector at q.
-    """
-    wp = self.w(self.F(p))
-    dFp_ = self.F.get_pullback(p)
-    return dFp_(wp)
-
-def pullback(F: Map, w: VectorField) -> PullbackCovectorField:
-  """The pullback of w by F.  F^*(w)
-
-  Args:
-    F: A map
-    w: A covector field on defined on the image of F
-
-  Returns:
-    F^*(w)
-  """
-  return PullbackCovectorField(F, w)
-

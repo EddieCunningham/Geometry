@@ -1,6 +1,7 @@
 import src.util as util
 from src.map import *
 from src.set import *
+from src.vector import *
 from src.tangent import *
 from src.section import *
 from src.manifold import *
