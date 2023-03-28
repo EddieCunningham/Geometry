@@ -251,17 +251,17 @@ class CovectorField(Section[Point,CotangentVector], abc.ABC):
 ################################################################################################################
 
 class PullbackCovectorField(CovectorField):
-  """The pullback of a covector field w through a diffeomorphism F
+  """The pullback of a covector field w through a map F
 
   Attributes:
     F: Map
     w: Covector field
   """
   def __init__(self, F: Map, w: CovectorField):
-    """Create a new pushforward vector field object
+    """Create a new pullback covector field object
 
     Args:
-      F: Diffeomorphism
+      F: Map
       w: Covector field
     """
     assert w.manifold == F.image
@@ -270,7 +270,7 @@ class PullbackCovectorField(CovectorField):
     super().__init__(M=F.domain)
 
   def __call__(self, p: Point) -> CotangentVector:
-    """Evaluate the vector field at a point.
+    """Evaluate the covector field at a point.
 
     Args:
       q: Point on the manifold.
@@ -364,7 +364,7 @@ class Pullback(LinearMap[CotangentVector,CotangentVector]):
       w: A cotangent vector on N = F(M)
 
     Returns:
-      dF_p(v)
+      dF_p^*(w)
     """
     assert isinstance(w, CotangentVector)
 

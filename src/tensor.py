@@ -32,7 +32,10 @@ __all__ = ["Tensor",
            "TensorBundle",
            "TensorField",
            "TensorFieldProduct",
-           "tensor_field_product"]
+           "tensor_field_product",
+           "PullbackOfTensor",
+           "PullbackTensorField",
+           "pullback_tensor_field"]
 
 class Tensor(MultlinearMap[List[Union[CotangentVector,TangentVector]],Coordinate]):
   """A tensor is a real valued multilinear function on one or more variables.
@@ -57,6 +60,17 @@ class Tensor(MultlinearMap[List[Union[CotangentVector,TangentVector]],Coordinate
     self.type = self.TkTpM.type
 
     self.contract = self.TkTpM.get_coordinate_indices()
+
+  def get_dense_coordinates(self) -> Coordinate:
+    """Get the dense representation of the coordinates
+
+    Returns:
+      A single array with the coordinates
+    """
+    contract = self.TkTpM.get_coordinate_indices()
+    tokens, _ = util.extract_tokens(contract)
+    contract = f"{contract} -> " + " ".join(tokens)
+    return einops.einsum(*self.xs, contract)
 
   def __call__(self, *Xs: List[Union[CotangentVector,TangentVector]]) -> Coordinate:
     """Apply the tensor to the inputs.
@@ -97,7 +111,7 @@ class Tensor(MultlinearMap[List[Union[CotangentVector,TangentVector]],Coordinate
     return einops.einsum(*self.xs, *args, contract)
 
   def __rmul__(self, a: float) -> "Tensor":
-    """Proposition 12.22
+    """Multiply the tensor by a scalar
 
     Args:
       a: A scalar
@@ -109,11 +123,46 @@ class Tensor(MultlinearMap[List[Union[CotangentVector,TangentVector]],Coordinate
     xs = [x*a for x in self.xs]
     return Tensor(*xs, TkTpM=self.TkTpM)
 
+  def __add__(self, Y: "Tensor") -> "Tensor":
+    """Add two tensors together.  Whatever factorization we have
+    of the coordinates will be removed.
+
+    Args:
+      Y: Another tensor
+
+    Returns:
+      Xp + Yp
+    """
+    # Must be the same type
+    assert isinstance(Y, Tensor)
+    assert self.type == Y.type
+    x_coords, y_coords = self.get_dense_coordinates(), Y.get_dense_coordinates()
+    return Tensor(x_coords + y_coords, TkTpM=self.TkTpM)
+
+  def __radd__(self, Y: "Tensor") -> "Tensor":
+    """Add Y from the right
+
+    Args:
+      Y: Another tensor
+
+    Returns:
+      X + Y
+    """
+    assert isinstance(Y, Tensor)
+    return self + Y
+
 ################################################################################################################
 
 class TensorType(namedtuple("TensorType", ["k", "l"])):
   def __add__(self, other: "TensorType"):
     return TensorType(self.k + other.k, self.l + other.l)
+
+class CovariantTensor(Tensor):
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    assert self.type.k == 0
+
+################################################################################################################
 
 class TensorSpace(VectorSpace):
   """Tensor space of a manifold.  Is defined at a point, TkTpM
@@ -575,9 +624,96 @@ class TensorField(Section[Point,Tensor], abc.ABC):
     Returns:
       Tensor at a point, or a map over the manifold
     """
+    # NEED TO INHERIT FROM THIS FUNCTION IN ORDER TO DEFINE FUNCTIONALITY
+    # FOR WHEN A POINT IS PASSED IN!!!!
+    # See AutonomousTensorField in vector_fields.py
     def fun(p: Point):
       return self(p)(*[X(p) for X in Xs])
     return Map(fun, domain=self.manifold, image=Reals())
+
+  def __rmul__(self, f: Union[Map,float]) -> "TensorField":
+    """Multiply a section with a scalar or function. fX
+
+    Args:
+      f: Another map or a scalar
+
+    Returns:
+      fX
+    """
+    is_map = isinstance(f, Map)
+    is_scalar = f in Reals(dimension=1)
+
+    assert is_map or is_scalar
+
+    class SectionRHSProduct(type(self)):
+      def __init__(self, X, pi, tensor_type):
+        self.X = X
+        self.type = tensor_type
+        self.lhs = f
+        self.is_float = f in Reals(dimension=1)
+        Section.__init__(self, pi)
+
+      def __call__(self, *Xs: Union[Point,List[Union[VectorField,CovectorField]]]) -> Union[Map,Tensor]:
+        if isinstance(Xs[0], VectorField):
+          def fun(p: Point):
+            fp = self.lhs if self.is_float else self.lhs(p)
+            return fp*self(p)(*[X(p) for X in Xs])
+          return Map(fun, domain=self.manifold, image=Reals())
+        else:
+          p = Xs[0]
+          fp = self.lhs if self.is_float else self.lhs(p)
+          Xp = self.X(p)
+          return fp*Xp
+
+    return SectionRHSProduct(self, self.pi, self.type)
+
+  def __add__(self, Y: "TensorField") -> "TensorField":
+    """Add two tensor fields together
+
+    Args:
+      Y: Another tensor field
+
+    Returns:
+      Xp + Yp
+    """
+    # Must be the same type
+    assert isinstance(Y, TensorField)
+    assert Y.type == self.type
+
+    class SumOfTensorFields(TensorField):
+      def __init__(self, A: TensorField, B: TensorField):
+        self.A = A
+        self.B = B
+        self.type = A.type
+        super().__init__(self.type, A.manifold)
+
+      def __call__(self, *Xs: Union[Point,List[Union[VectorField,CovectorField]]]) -> Union[Map,Tensor]:
+        if isinstance(Xs[0], VectorField) or isinstance(Xs[0], CovectorField):
+          # If we're evaluating at a list of vector fields, then pass the input fields to
+          # each of the input tensor fields
+          def fun(p: Point):
+            Ap, Bp = self.A(p), self.B(p)
+            return (Ap + Bp)(*[X(p) for X in Xs])
+
+          return Map(fun, domain=self.manifold, image=Reals())
+        else:
+          # If we're evaluating at a point, then add the tensors
+          p = Xs[0]
+          Ap = self.A(p)
+          Bp = self.B(p)
+          return Ap + Bp
+    return SumOfTensorFields(self, Y)
+
+  def __radd__(self, Y: "TensorField") -> "TensorField":
+    """Add Y from the right
+
+    Args:
+      Y: Another tensor field
+
+    Returns:
+      X + Y
+    """
+    return self + Y
 
 ################################################################################################################
 
@@ -648,3 +784,127 @@ def tensor_field_product(A: TensorField, B: TensorField) -> TensorField:
   return TensorFieldProduct(A, B)
 
 ################################################################################################################
+
+class PullbackOfTensor(LinearMap[CovariantTensor,CovariantTensor]):
+  """The pullback map for a function that can be applied to a tensor
+
+  Attributes:
+    F: A map from M->N.
+    p: The point where the differential is defined.
+  """
+  def __init__(self, F: Map[Input,Output], p: Point, tensor_type: TensorType):
+    """Creates the differential of F at p
+
+    Args:
+    F: A map from M->N.
+    p: The point where the differential is defined.
+    """
+    self.p = p
+    self.q = F(self.p)
+    self.F = F
+
+    self.type = tensor_type
+
+    self.TkTpM = TensorSpace(self.p, tensor_type=self.type, M=F.domain)
+    self.TkTpN = TensorSpace(self.q, tensor_type=self.type, M=F.image)
+    super().__init__(f=self.__call__, domain=self.TkTpN, image=self.TkTpM)
+
+  def __call__(self, T: CovariantTensor) -> CovariantTensor:
+    """Apply the differential to a tangent vector.
+
+    Args:
+      T: A covariant tensor on N = F(M)
+
+    Returns:
+      dF_p^*(T)
+    """
+    assert T.type.k == 0
+
+    # This is definitely not the most efficient way
+    # TODO: IMPROVE EFFICIENCY USING VJP/JVP FOR TENSORS
+    jacobian_matrix = self.F.get_pullback(self.p).get_coordinates()
+
+    # We need to apply the Jacobian of F to each coordinate axis
+    coordinate_transforms = [jacobian_matrix]*T.type.l
+
+    # Get the contraction corresponding to the tensor's coordinates
+    # If T is the product of a 1 and 2 covariant tensor, this would be
+    # 'l0, l1 l2'
+    coord_contract = T.TkTpM.get_coordinate_indices()
+
+    # Get the unique tokens in the coordinate contract
+    # In example, would be 'new_l0 new_l1 new_l2'
+    tokens, _ = util.extract_tokens(coord_contract)
+    output_tokens = ["new_"+t for t in tokens]
+    output_contract = " ".join(output_tokens)
+    # Each of the Jacobians transforms a single axis
+    # In running example, would be 'new_l0 l0, new_l1 l1, new_l2 l2'
+    jacobian_contract = ", ".join([f"new_{t} {t}" for t in tokens])
+
+    # Put it all together
+    # In example, would be 'l0, l1 l2, new_l0 l0, new_l1 l1, new_l2 l2 -> new_l0 new_l1 new_l2'
+    contract = coord_contract + ", " + jacobian_contract + " -> " + output_contract
+
+    # Get the coordinates of the output tensor.  This won't factor like
+    # the coordinates of T might.
+    output_coords = einops.einsum(*T.xs, *coordinate_transforms, contract)
+
+    TkTpM = TensorSpace(self.p, tensor_type=self.type, M=self.F.domain)
+    return CovariantTensor(output_coords, TkTpM=TkTpM)
+
+################################################################################################################
+
+class PullbackTensorField(TensorField):
+  """The pullback of a tensorfield field w through a map F
+
+  Attributes:
+    F: Map
+    T: Tensor field
+  """
+  def __init__(self, F: Map, T: TensorField):
+    """Create a new pullback covariant tensor field
+
+    Args:
+      F: Map
+      T: Tensor field
+    """
+    # T must be a covariant tensor field
+    assert T.manifold == F.image
+    assert T.type.k == 0
+    self.T = T
+    self.F = F
+    super().__init__(tensor_type=T.type, M=F.domain)
+
+  def __call__(self, *Xs: Union[Point,List[Union[VectorField,CovectorField]]]) -> Union[Map,Tensor]:
+    """Evaluate the tensor field at a point.
+
+    Args:
+      q: Point on the manifold.
+
+    Returns:
+      Tensor at q.
+    """
+    if isinstance(Xs[0], VectorField):
+      # Then evaluate the pullback on vector fields
+      def fun(p: Point):
+        return self(p)(*[X(p) for X in Xs])
+      return Map(fun, domain=self.manifold, image=Reals())
+    else:
+      # Otherwise, the input is a point
+      p = Xs[0]
+
+      Tp = self.T(self.F(p))
+      dFp_ = self.F.get_tensor_pullback(p, self.T.type)
+      return dFp_(Tp)
+
+def pullback_tensor_field(F: Map, T: TensorField) -> PullbackTensorField:
+  """The pullback of T by F.  F^*(T)
+
+  Args:
+    F: A map
+    T: A covariant tensor field on defined on the image of F
+
+  Returns:
+    F^*(T)
+  """
+  return PullbackTensorField(F, T)

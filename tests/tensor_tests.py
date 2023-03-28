@@ -164,6 +164,7 @@ def tensor_field_tests():
   # Try applying a covariant tensor field to vector fields
   tensor_type = TensorType(0, 3)
   T = AutonomousTensorField(get_tensor_field_fun(M, tensor_type, k2), tensor_type, M)
+  Tp = T(p)
 
   k1, k2, k3, k4 = random.split(k3, 4)
   X1 = AutonomousVectorField(get_vector_field_fun(M.dimension, k1), M)
@@ -210,7 +211,77 @@ def tensor_field_tests():
   out2 = T1T2(w1, w2, w3, X1, X2, X3)(p)
   assert jnp.allclose(out1, out2)
 
-  import pdb; pdb.set_trace()
+
+  # Check that the pullbacks work
+
+  # Build a map to matrices
+  def _F(p):
+    out = random.normal(rng_key, (5, 5))*jnp.sin(p)
+    return out
+  N = GeneralLinearGroup(dim=5)
+  F = Map(_F, domain=M, image=N)
+  Fp = F(p)
+
+  # Make a tensor field product to test
+  tensor_type = TensorType(0, 1)
+  T1 = AutonomousTensorField(get_tensor_field_fun(N, tensor_type, k2), tensor_type, N)
+  tensor_type = TensorType(0, 2)
+  T2 = AutonomousTensorField(get_tensor_field_fun(N, tensor_type, k3), tensor_type, N)
+  T = tensor_field_product(T1, T2)
+
+  Tp = T(Fp)
+
+  dFp = F.get_differential(p)
+  out1 = Tp(dFp(X1p), dFp(X2p), dFp(X3p))
+
+  F_pullback = F.get_tensor_pullback(p, Tp.type)
+  out2 = F_pullback(Tp)(X1p, X2p, X3p)
+
+  assert jnp.allclose(out1, out2)
+
+  # Test properties from proposition 12.25
+  # a)
+  test1 = pullback_tensor_field(F, f*T)
+  test2 = f(Fp)*pullback_tensor_field(F, T)
+
+  out1 = test1(X1, X2, X3)(p)
+  out2 = test2(X1, X2, X3)(p)
+  assert jnp.allclose(out1, out2)
+
+  # b)
+  test1 = tensor_field_product(pullback_tensor_field(F, T1), pullback_tensor_field(F, T2))
+  test2 = pullback_tensor_field(F, tensor_field_product(T1, T2))
+
+  out1 = test1(X1, X2, X3)(p)
+  out2 = test2(X1, X2, X3)(p)
+  assert jnp.allclose(out1, out2)
+
+  # c)
+  tensor_type = TensorType(0, 1)
+  T1 = AutonomousTensorField(get_tensor_field_fun(N, tensor_type, k2), tensor_type, N)
+  tensor_type = TensorType(0, 1)
+  T2 = AutonomousTensorField(get_tensor_field_fun(N, tensor_type, k3), tensor_type, N)
+  test1 = pullback_tensor_field(F, T1) + pullback_tensor_field(F, T2)
+  test2 = pullback_tensor_field(F, T1 + T2)
+
+  out1 = test1(X1)(p)
+  out2 = test2(X1)(p)
+  assert jnp.allclose(out1, out2)
+
+  # # e) This is wrong in the book
+  # def _G(p):
+  #   assert p.shape == (5, 5)
+  #   out = random.normal(k1, (5, 5))@p
+  #   return out
+  # G = Map(_G, domain=N, image=N)
+  # GFp = G(F(p))
+
+  # test1 = pullback_tensor_field(compose(F, G), T)
+  # test2 = pullback_tensor_field(F, pullback_tensor_field(G, T))
+
+  # out1 = test1(X1, X2, X3)(p)
+  # out2 = test2(X1, X2, X3)(p)
+  # assert jnp.allclose(out1, out2)
 
 
 def run_all():

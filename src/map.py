@@ -101,6 +101,19 @@ class Map(Generic[Input,Output]):
     from src.cotangent import Pullback
     return Pullback(self, p)
 
+  def get_tensor_pullback(self, p: Point, tensor_type: "TensorType") -> "PullbackOfTensor":
+    """Get the pullback of this map at p.
+    # TODO: MERGE THIS WITH THE REGULAR PULLBACK
+
+    Args:
+      p: Point to evaluate rank at
+
+    Return:
+      dFp^*
+    """
+    from src.tensor import PullbackOfTensor
+    return PullbackOfTensor(self, p, tensor_type)
+
   def rank(self, p: Point) -> int:
     """Returns the rank of the map at p
 
