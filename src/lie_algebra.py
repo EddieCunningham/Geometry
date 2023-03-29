@@ -41,7 +41,7 @@ class LeftInvariantVectorField(VectorField):
     self.manifold = self.G
     super().__init__(self.manifold)
 
-  def __call__(self, g: Point) -> TangentVector:
+  def apply_to_point(self, g: Point) -> TangentVector:
     """Evaluate the vector field at a point.
 
     Args:
@@ -153,7 +153,7 @@ class SpaceOfMatrices(LieAlgebra):
         self.B = B
         super().__init__(A.manifold)
 
-      def __call__(self, p: Point) -> TangentVector:
+      def apply_to_point(self, p: Point) -> TangentVector:
         Ap, Bp = self.A(p), self.B(p)
 
         # Get the matrix components of each tangent vector

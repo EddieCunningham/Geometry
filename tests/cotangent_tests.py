@@ -14,6 +14,7 @@ from src.vector_field import *
 from src.instances.manifolds import *
 from src.instances.lie_groups import *
 from src.section import *
+from src.lie_derivative import *
 import nux
 import src.util as util
 from tests.vector_field_tests import get_vector_field_fun
@@ -90,7 +91,7 @@ def run_all():
   w = W(p)
 
   # Make sure that we can apply vector fields to covector fields
-  assert jnp.allclose((W*X)(p), w(v))
+  assert jnp.allclose((W(X))(p), w(v))
 
   ############################################################
   ############################################################
@@ -137,7 +138,6 @@ def run_all():
   check5 = (compose(u, F)*pullback(F, W))(p)
   assert jnp.allclose(check1.x, check5.x)
 
-
   # Test the differential of a scalar function
   du = FunctionDifferential(u, N)
   out1 = pullback(F, du)(p)
@@ -155,9 +155,9 @@ def run_all():
   u = Map(_u, domain=M, image=EuclideanManifold(dimension=1))
   W = FunctionDifferential(u, M)
 
-  t1 = X*(W*Y)
-  t2 = Y*(W*X)
-  t3 = W*lie_bracket(X, Y)
+  t1 = X(W(Y))
+  t2 = Y(W(X))
+  t3 = W(lie_bracket(X, Y))
 
   assert jnp.allclose(t1(p) - t2(p), t3(p))
 

@@ -10,6 +10,7 @@ from src.map import *
 from src.tangent import *
 from src.manifold import *
 from src.vector_field import *
+from src.lie_derivative import *
 from src.instances.manifolds import *
 from src.instances.vector_fields import *
 import src.util as util
@@ -95,26 +96,26 @@ def run_all():
   assert jnp.allclose((f*X + g*Y)(p)(f), f(p)*(Xpf) + g(p)*Y(p)(f))
 
   # Test left hand side multiplication
-  assert jnp.allclose((X*f)(p), X(p)(f))
+  assert jnp.allclose((X(f))(p), X(p)(f))
 
   # Test the product rule
   fg = Map(lambda x: f(x)*g(x), domain=M, image=Reals(dimension=1))
-  Xfg = X*fg
+  Xfg = X(fg)
   out_Xfg = Xfg(p)
 
-  fXg = f*X*g
+  fXg = (f*X)(g)
   out_fXg = fXg(p)
 
-  gXf = g*X*f
+  gXf = (g*X)(f)
   out_gXf = gXf(p)
   assert jnp.allclose(out_Xfg, out_fXg + out_gXf)
 
   # Check the pushforward
   FX = pushforward(F, X)
-  FXf = FX*f
+  FXf = FX(f)
 
-  lhs = compose(pushforward(F, X)*f, F)(p)
-  rhs = (X*compose(f, F))(p)
+  lhs = compose(pushforward(F, X)(f), F)(p)
+  rhs = (X(compose(f, F)))(p)
   assert jnp.allclose(lhs, rhs)
 
 
@@ -123,7 +124,7 @@ def run_all():
   X_Yp = X_Y(p)
 
   lhs = X_Yp(f)
-  rhs = X(p)(Y*f) - Y(p)(X*f)
+  rhs = X(p)(Y(f)) - Y(p)(X(f))
   assert jnp.allclose(lhs, rhs)
 
   # Check its identities:
@@ -146,7 +147,7 @@ def run_all():
 
   # Product rule
   lhs = lie_bracket(f*X, g*Y)(p)(f)
-  rhs = (fg*lie_bracket(X, Y) + (f*X*g)*Y - (g*Y*f)*X)(p)(f)
+  rhs = (fg*lie_bracket(X, Y) + ((f*X)(g))*Y - ((g*Y)(f))*X)(p)(f)
   assert jnp.allclose(lhs, rhs)
 
   # Pushforward

@@ -22,10 +22,12 @@ import math
 
 __all__ = ["Tensor",
            "TensorType",
+           "CovariantTensor",
            "TensorSpace",
            "TensorProductTensor",
            "TensorProductSpace",
            "tensor_space_product",
+           "tensor_product",
            "SymmetrizedTensor",
            "symmetrize",
            "symmetric_product",
@@ -120,12 +122,16 @@ class Tensor(MultlinearMap[List[Union[CotangentVector,TangentVector]],Coordinate
       (aX)_p
     """
     assert a in Reals(dimension=1)
-    xs = [x*a for x in self.xs]
+    # Only multiply one of the coordinates by a, otherwise
+    # we'd be multiplying the dense coordinates by a more
+    # than once!
+    xs = (self.xs[0]*a,) + self.xs[1:]
     return Tensor(*xs, TkTpM=self.TkTpM)
 
   def __add__(self, Y: "Tensor") -> "Tensor":
     """Add two tensors together.  Whatever factorization we have
-    of the coordinates will be removed.
+    of the coordinates will be removed if the coordinates of each
+    tensor are not the same.
 
     Args:
       Y: Another tensor
@@ -136,8 +142,19 @@ class Tensor(MultlinearMap[List[Union[CotangentVector,TangentVector]],Coordinate
     # Must be the same type
     assert isinstance(Y, Tensor)
     assert self.type == Y.type
-    x_coords, y_coords = self.get_dense_coordinates(), Y.get_dense_coordinates()
-    return Tensor(x_coords + y_coords, TkTpM=self.TkTpM)
+
+    # Check to see if we can keep the same coordinate factorization
+    use_dense = False
+    for x, y in zip(self.xs, Y.xs):
+      if x.shape != y.shape:
+        use_dense = True
+
+    if use_dense:
+      x_coords, y_coords = self.get_dense_coordinates(), Y.get_dense_coordinates()
+      return Tensor(x_coords + y_coords, TkTpM=self.TkTpM)
+    else:
+      new_xs = [x + y for x, y in zip(self.xs, Y.xs)]
+      return Tensor(*new_xs, TkTpM=self.TkTpM)
 
   def __radd__(self, Y: "Tensor") -> "Tensor":
     """Add Y from the right
@@ -615,21 +632,47 @@ class TensorField(Section[Point,Tensor], abc.ABC):
     pi = ProjectionMap(idx=0, domain=image, image=domain)
     super().__init__(pi)
 
-  def __call__(self, *Xs: Union[Point,List[Union[VectorField,CovectorField]]]) -> Union[Map,Tensor]:
-    """Evaluate the tensor field at a point, or evaluate it on vector/covector fields
+  def apply_to_co_vector_fields(self, *Xs: List[Union[VectorField,CovectorField]]) -> Map:
+    """Evaluate the tensor field on (co)vector fields
 
     Args:
-      Xs: Either a point or a list of vector/covector fields
+      Xs: A list of (co)vector fields
+
+    Returns:
+      A map over the manifold
+    """
+    def fun(p: Point):
+      return self(p)(*[X(p) for X in Xs])
+    return Map(fun, domain=self.manifold, image=Reals())
+
+  @abc.abstractmethod
+  def apply_to_point(self, p: Point) -> Tensor:
+    """Evaluate the tensor field at a point.
+
+    Args:
+      p: Point on the manifold.
+
+    Returns:
+      Tensor at p.
+    """
+    pass
+
+  def __call__(self, *x: Union[Point,List[Union[VectorField,CovectorField]]]) -> Union[Map,Tensor]:
+    """Evaluate the tensor field at a point, or evaluate it on (co)vector fields
+
+    Args:
+      Xs: Either a point or a list of (co)vector fields
 
     Returns:
       Tensor at a point, or a map over the manifold
     """
-    # NEED TO INHERIT FROM THIS FUNCTION IN ORDER TO DEFINE FUNCTIONALITY
-    # FOR WHEN A POINT IS PASSED IN!!!!
-    # See AutonomousTensorField in vector_fields.py
-    def fun(p: Point):
-      return self(p)(*[X(p) for X in Xs])
-    return Map(fun, domain=self.manifold, image=Reals())
+    if isinstance(x[0], VectorField) or isinstance(x[0], CovectorField):
+      return self.apply_to_co_vector_fields(*x)
+    else:
+      if util.GLOBAL_CHECK:
+        assert x in self.manifold
+      p = x[0]
+      return self.apply_to_point(p)
 
   def __rmul__(self, f: Union[Map,float]) -> "TensorField":
     """Multiply a section with a scalar or function. fX
@@ -646,24 +689,21 @@ class TensorField(Section[Point,Tensor], abc.ABC):
     assert is_map or is_scalar
 
     class SectionRHSProduct(type(self)):
-      def __init__(self, X, pi, tensor_type):
-        self.X = X
+      def __init__(self, T, pi, tensor_type):
+        self.T = T
         self.type = tensor_type
         self.lhs = f
         self.is_float = f in Reals(dimension=1)
         Section.__init__(self, pi)
 
-      def __call__(self, *Xs: Union[Point,List[Union[VectorField,CovectorField]]]) -> Union[Map,Tensor]:
-        if isinstance(Xs[0], VectorField):
-          def fun(p: Point):
-            fp = self.lhs if self.is_float else self.lhs(p)
-            return fp*self(p)(*[X(p) for X in Xs])
-          return Map(fun, domain=self.manifold, image=Reals())
-        else:
-          p = Xs[0]
-          fp = self.lhs if self.is_float else self.lhs(p)
-          Xp = self.X(p)
-          return fp*Xp
+      def apply_to_co_vector_fields(self, *Xs: List[Union[VectorField,CovectorField]]) -> Map:
+        return self.T(*Xs).__rmul__(self.lhs) # Not sure why the regular syntax fails
+
+      def apply_to_point(self, p: Point) -> Tensor:
+        fp = self.lhs if self.is_float else self.lhs(p)
+        Tp = self.T(p)
+        out = fp*Tp
+        return out
 
     return SectionRHSProduct(self, self.pi, self.type)
 
@@ -687,21 +727,14 @@ class TensorField(Section[Point,Tensor], abc.ABC):
         self.type = A.type
         super().__init__(self.type, A.manifold)
 
-      def __call__(self, *Xs: Union[Point,List[Union[VectorField,CovectorField]]]) -> Union[Map,Tensor]:
-        if isinstance(Xs[0], VectorField) or isinstance(Xs[0], CovectorField):
-          # If we're evaluating at a list of vector fields, then pass the input fields to
-          # each of the input tensor fields
-          def fun(p: Point):
-            Ap, Bp = self.A(p), self.B(p)
-            return (Ap + Bp)(*[X(p) for X in Xs])
+      def apply_to_co_vector_fields(self, *Xs: List[Union[VectorField,CovectorField]]) -> Map:
+        return self.A(*Xs) + self.B(*Xs)
 
-          return Map(fun, domain=self.manifold, image=Reals())
-        else:
-          # If we're evaluating at a point, then add the tensors
-          p = Xs[0]
-          Ap = self.A(p)
-          Bp = self.B(p)
-          return Ap + Bp
+      def apply_to_point(self, p: Point) -> Tensor:
+        Ap = self.A(p)
+        Bp = self.B(p)
+        return Ap + Bp
+
     return SumOfTensorFields(self, Y)
 
   def __radd__(self, Y: "TensorField") -> "TensorField":
@@ -738,38 +771,42 @@ class TensorFieldProduct(TensorField):
 
     super().__init__(self.type, A.manifold)
 
-  def __call__(self, *Xs: Union[Point,List[Union[VectorField,CovectorField]]]) -> Union[Map,Tensor]:
-    """Evaluate the tensor field at a point, or evaluate it on vector/covector fields
+  def apply_to_co_vector_fields(self, *Xs: List[Union[VectorField,CovectorField]]) -> Map:
+    """Evaluate the tensor field on vector/covector fields
 
     Args:
-      Xs: Either a point or a list of vector/covector fields
+      Xs: A list of vector/covector fields
 
     Returns:
-      Tensor at a point, or a map over the manifold
+      A map over the manifold
     """
-    if isinstance(Xs[0], VectorField) or isinstance(Xs[0], CovectorField):
-      # If we're evaluating at a list of vector fields, then pass the input fields to
-      # each of the input tensor fields
-      def fun(p: Point):
-        Ap, Bp = self.A(p), self.B(p)
+    # If we're evaluating at a list of vector fields, then pass the input fields to
+    # each of the input tensor fields
 
-        covector_fields = Xs[:self.type.k]
-        vector_fields = Xs[self.type.k:]
+    covector_fields = Xs[:self.type.k]
+    vector_fields = Xs[self.type.k:]
 
-        covectors = [w(p) for w in covector_fields]
-        vectors = [X(p) for X in vector_fields]
+    AX = self.A(*covector_fields[:self.A.type.k], *vector_fields[:self.A.type.l])
+    BX = self.B(*covector_fields[self.A.type.k:], *vector_fields[self.A.type.l:])
 
-        out1 = Ap(*covectors[:self.A.type.k], *vectors[:self.A.type.l])
-        out2 = Bp(*covectors[self.A.type.k:], *vectors[self.A.type.l:])
-        return out1*out2
+    def fun(p: Point):
+      return AX(p)*BX(p)
 
-      return Map(fun, domain=self.manifold, image=Reals())
-    else:
-      # If we're evaluating at a point, then we evaluate the tensor product of the tensors
-      p = Xs[0]
-      Ap = self.A(p)
-      Bp = self.B(p)
-      return TensorProductTensor(Ap, Bp)
+    return Map(fun, domain=self.manifold, image=Reals())
+
+  def apply_to_point(self, p: Point) -> Tensor:
+    """Evaluate the tensor field at a point.
+
+    Args:
+      p: Point on the manifold.
+
+    Returns:
+      Tensor at p.
+    """
+    # If we're evaluating at a point, then we evaluate the tensor product of the tensors
+    Ap = self.A(p)
+    Bp = self.B(p)
+    return TensorProductTensor(Ap, Bp)
 
 def tensor_field_product(A: TensorField, B: TensorField) -> TensorField:
   """Tensor product of tensor fields
@@ -837,6 +874,7 @@ class PullbackOfTensor(LinearMap[CovariantTensor,CovariantTensor]):
     tokens, _ = util.extract_tokens(coord_contract)
     output_tokens = ["new_"+t for t in tokens]
     output_contract = " ".join(output_tokens)
+
     # Each of the Jacobians transforms a single axis
     # In running example, would be 'new_l0 l0, new_l1 l1, new_l2 l2'
     jacobian_contract = ", ".join([f"new_{t} {t}" for t in tokens])
@@ -875,27 +913,18 @@ class PullbackTensorField(TensorField):
     self.F = F
     super().__init__(tensor_type=T.type, M=F.domain)
 
-  def __call__(self, *Xs: Union[Point,List[Union[VectorField,CovectorField]]]) -> Union[Map,Tensor]:
+  def apply_to_point(self, p: Point) -> Tensor:
     """Evaluate the tensor field at a point.
 
     Args:
-      q: Point on the manifold.
+      p: Point on the manifold.
 
     Returns:
-      Tensor at q.
+      Tensor at p.
     """
-    if isinstance(Xs[0], VectorField):
-      # Then evaluate the pullback on vector fields
-      def fun(p: Point):
-        return self(p)(*[X(p) for X in Xs])
-      return Map(fun, domain=self.manifold, image=Reals())
-    else:
-      # Otherwise, the input is a point
-      p = Xs[0]
-
-      Tp = self.T(self.F(p))
-      dFp_ = self.F.get_tensor_pullback(p, self.T.type)
-      return dFp_(Tp)
+    Tp = self.T(self.F(p))
+    dFp_ = self.F.get_tensor_pullback(p, self.T.type)
+    return dFp_(Tp)
 
 def pullback_tensor_field(F: Map, T: TensorField) -> PullbackTensorField:
   """The pullback of T by F.  F^*(T)
@@ -908,3 +937,5 @@ def pullback_tensor_field(F: Map, T: TensorField) -> PullbackTensorField:
     F^*(T)
   """
   return PullbackTensorField(F, T)
+
+################################################################################################################

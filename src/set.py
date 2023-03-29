@@ -127,6 +127,35 @@ class Reals(Set):
 
     return super().__contains__(p)
 
+  def __eq__(self, other: Set) -> bool:
+    """Checks to see if another set is the set of reals.
+    Because we construct these often, it doesn't make
+    sense to compare the instances to each other.
+
+    Args:
+      other: A set
+
+    Returns:
+      boolean
+    """
+    from src.instances.manifolds import EuclideanManifold
+
+    if isinstance(other, EuclideanManifold):
+      if self.dimension is None:
+        return other.dimension <= 1
+      return self.dimension == other.dimension
+
+    type_check = isinstance(other, Reals)
+
+    if other.dimension is None:
+      if self.dimension:
+        dim_check = self.dimension <= 1
+      else:
+        dim_check = True # Both dimensions are None
+    else:
+      dim_check = self.dimension == other.dimension
+    return dim_check and type_check
+
 ################################################################################################################
 
 class CartesianProductSet(Set):

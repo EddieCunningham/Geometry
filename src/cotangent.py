@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Union
 import src.util
 from functools import partial
 import jax
@@ -214,6 +214,9 @@ class CovectorField(Section[Point,CotangentVector], abc.ABC):
     """
     self.manifold = M
 
+    from src.tensor import TensorType
+    self.type = TensorType(0, 1)
+
     # Construct the bundle
     domain = M
     from src.bundle import CotangentBundle
@@ -221,19 +224,7 @@ class CovectorField(Section[Point,CotangentVector], abc.ABC):
     pi = ProjectionMap(idx=0, domain=image, image=domain)
     super().__init__(pi)
 
-  @abc.abstractmethod
-  def __call__(self, p: Point) -> CotangentVector:
-    """Evaluate the covector field at a point.
-
-    Args:
-      p: Point on the manifold.
-
-    Returns:
-      Cotangent vector at p.
-    """
-    pass
-
-  def __mul__(self, X: VectorField) -> Map:
+  def apply_to_vector_field(self, X: VectorField) -> Map:
     """Fill the covector field with a vector field.  This
     produces a map over tha manifold
 
@@ -247,6 +238,34 @@ class CovectorField(Section[Point,CotangentVector], abc.ABC):
     def fun(p: Point):
       return self(p)(X(p))
     return Map(fun, domain=self.manifold, image=Reals())
+
+  @abc.abstractmethod
+  def apply_to_point(self, p: Point) -> CotangentVector:
+    """Evaluate the covector field at a point.
+
+    Args:
+      p: Point on the manifold.
+
+    Returns:
+      Tangent vector at p.
+    """
+    pass
+
+  def __call__(self, x: Union[Point,VectorField]) -> Union[CotangentVector,Map]:
+    """Evaluate the covector field at a point.
+
+    Args:
+      x: Point on the manifold.
+
+    Returns:
+      Cotangent vector at x.
+    """
+    if isinstance(x, VectorField):
+      return self.apply_to_vector_field(x)
+    else:
+      if util.GLOBAL_CHECK:
+        assert x in self.manifold
+      return self.apply_to_point(x)
 
 ################################################################################################################
 
@@ -269,7 +288,7 @@ class PullbackCovectorField(CovectorField):
     self.w = w
     super().__init__(M=F.domain)
 
-  def __call__(self, p: Point) -> CotangentVector:
+  def apply_to_point(self, p: Point) -> CotangentVector:
     """Evaluate the covector field at a point.
 
     Args:
@@ -309,7 +328,7 @@ class FunctionDifferential(CovectorField):
     self.function = f
     super().__init__(M)
 
-  def __call__(self, p: Point) -> CotangentVector:
+  def apply_to_point(self, p: Point) -> CotangentVector:
     """The differential at p is a covector so that df_p(v) = v_p(f)
 
     Args:
@@ -424,13 +443,13 @@ class Coframe(Section[Point,CotangentBasis], abc.ABC):
     super().__init__(pi)
 
   @abc.abstractmethod
-  def __call__(self, p: Point) -> CotangentBasis:
-    """Evaluate the vector field at a point.
+  def apply_to_point(self, p: Input) -> CotangentBasis:
+    """Evaluate the coframe field at a point.
 
     Args:
       p: Point on the manifold.
 
     Returns:
-      Tangent vector at p.
+      Cotangent basis at p
     """
     pass

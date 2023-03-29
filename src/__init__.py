@@ -9,6 +9,8 @@ from src.lie_group import *
 from src.lie_algebra import *
 from src.flow import *
 from src.bundle import *
+from src.tensor import *
+from src.lie_derivative import *
 
 from src.instances.manifolds import *
 from src.instances.lie_groups import *

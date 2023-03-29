@@ -15,7 +15,8 @@ import src.util as util
 import diffrax
 
 __all__ = ["IntegralCurve",
-           "Flow"]
+           "Flow",
+           "TimeDependentFlow"]
 
 class IntegralCurve(Map[Coordinate,Point]):
   """An integral curve is a 1d curve whose tangent space
@@ -195,17 +196,3 @@ class TimeDependentFlow(Map[Tuple[Coordinate,Coordinate,Point],Point]):
     def psi_t(p: Point) -> Point:
       return self(t0, t, p)
     return Map(psi_t, domain=self.manifold, image=self.manifold)
-
-################################################################################################################
-
-def lie_derivative(V: VectorField, W: VectorField):
-  """Compute the Lie derivative L_V(W) = [V, W]
-
-  Args:
-    V: Vector field 1
-    W: Vector field 2
-
-  Returns:
-    L_V(W) = [V, W]
-  """
-  return lie_bracket(V, W)

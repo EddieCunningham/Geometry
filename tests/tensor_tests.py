@@ -227,7 +227,14 @@ def tensor_field_tests():
   T1 = AutonomousTensorField(get_tensor_field_fun(N, tensor_type, k2), tensor_type, N)
   tensor_type = TensorType(0, 2)
   T2 = AutonomousTensorField(get_tensor_field_fun(N, tensor_type, k3), tensor_type, N)
+
+  # tensor_type = TensorType(0, 1)
+  # T3 = AutonomousTensorField(get_tensor_field_fun(N, tensor_type, k1), tensor_type, N)
   T = tensor_field_product(T1, T2)
+
+  # tensor_type = TensorType(0, 3)
+  # T = AutonomousTensorField(get_tensor_field_fun(N, tensor_type, k3), tensor_type, N)
+
 
   Tp = T(Fp)
 
@@ -239,13 +246,26 @@ def tensor_field_tests():
 
   assert jnp.allclose(out1, out2)
 
+  # Test something
+  tensor1 = (f*T)(Fp)
+  tensor2 = f(Fp)*T(Fp)
+  assert jnp.allclose(tensor1.get_dense_coordinates(), tensor2.get_dense_coordinates())
+
   # Test properties from proposition 12.25
   # a)
-  test1 = pullback_tensor_field(F, f*T)
-  test2 = f(Fp)*pullback_tensor_field(F, T)
+  test1 = pullback_tensor_field(F, f*T) # Multiplied by an extra f(Fp)
+  test2 = f(Fp)*pullback_tensor_field(F, T) # Correct
 
-  out1 = test1(X1, X2, X3)(p)
-  out2 = test2(X1, X2, X3)(p)
+  tensor1 = test1(p)
+  tensor2 = test2(p)
+
+  assert jnp.allclose(tensor1.get_dense_coordinates(), tensor2.get_dense_coordinates())
+
+  map1 = test1(X1, X2, X3)
+  map2 = test2(X1, X2, X3)
+
+  out1 = map1(p)
+  out2 = map2(p)
   assert jnp.allclose(out1, out2)
 
   # b)
@@ -289,32 +309,6 @@ def run_all():
 
   # cotangent_tensor_product_test()
   tensor_field_tests()
-
-  assert 0
-
-
-  rng_key = random.PRNGKey(0)
-
-  # Construct a manifold
-  M = Sphere(dim=5)
-  p = random.normal(rng_key, (5,)); p = p/jnp.linalg.norm(p)
-
-
-
-  # Construct 4 cotangent vectors
-  cotangent_coords = random.normal(rng_key, (3, M.dim))
-  coTpM = CotangentSpace(p, M)
-  tangent_vectors = [CotangentVector(coords, coTpM) for coords in cotangent_coords]
-
-  # Construct 3 tangent vectors
-  tangent_coords = random.normal(rng_key, (2, M.dim))
-  TpM = TangentSpace(p, M)
-  tangent_vectors = [TangentVector(coords, TpM) for coords in tangent_coords]
-
-  # Create a tensor product
-
-
-  # Create a tensor that accepts these that is equal to the tensor product
 
 
 if __name__ == "__main__":

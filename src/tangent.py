@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable, List, Optional, Generic, Tuple
+from typing import Callable, List, Optional, Generic, Tuple, Union
 import src.util
 from functools import partial
 import jax
@@ -148,8 +148,24 @@ class VectorField(Section[Point,TangentVector], abc.ABC):
     pi = ProjectionMap(idx=0, domain=image, image=domain)
     super().__init__(pi)
 
+  def apply_to_map(self, f: Map) -> Map:
+    """Multiply a vector field with a function.
+
+    Args:
+      f: A map from the manifold to R
+
+    Returns:
+      fX
+    """
+    from src.instances.manifolds import EuclideanManifold
+    assert isinstance(f, Map)
+    def fun(p: Point):
+      return self(p)(f)
+    return Map(fun, domain=self.manifold, image=EuclideanManifold(dimension=1))
+    # return Map(fun, domain=self.manifold, image=Reals())
+
   @abc.abstractmethod
-  def __call__(self, p: Point) -> TangentVector:
+  def apply_to_point(self, p: Point) -> TangentVector:
     """Evaluate the vector field at a point.
 
     Args:
@@ -160,20 +176,21 @@ class VectorField(Section[Point,TangentVector], abc.ABC):
     """
     pass
 
-  def __mul__(self, f: Map) -> Map:
-    """Multiply a vector field with a function.
+  def __call__(self, x: Union[Point,Map]) -> Union[TangentVector,Map]:
+    """Evaluate the vector field at a point.
 
     Args:
-      f: A map from the manifold to R
+      p: Point on the manifold.
 
     Returns:
-      fX
+      Tangent vector at p.
     """
-    assert isinstance(f, Map)
-    def fun(p: Point):
-      return self(p)(f)
-
-    return Map(fun, domain=self.manifold, image=Reals())
+    if isinstance(x, Map):
+      return self.apply_to_map(x)
+    else:
+      if util.GLOBAL_CHECK:
+        assert x in self.manifold
+      return self.apply_to_point(x)
 
 ################################################################################################################
 
@@ -229,7 +246,7 @@ class Frame(Section[Point,TangentBasis], abc.ABC):
     super().__init__(pi)
 
   @abc.abstractmethod
-  def __call__(self, p: Point) -> TangentBasis:
+  def apply_to_point(self, p: Point) -> TangentBasis:
     """Evaluate the vector field at a point.
 
     Args:

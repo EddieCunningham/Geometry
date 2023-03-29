@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable, List, TypeVar, Generic, Tuple
+from typing import Callable, List, TypeVar, Generic, Tuple, Union
 import src.util
 from functools import partial
 import jax.numpy as jnp
@@ -158,6 +158,91 @@ class Map(Generic[Input,Output]):
       Whether or not is diffeomorphism
     """
     return self.is_immersion(p) and self.is_submersion(p)
+
+  def map_is_compatible(self, g: "Map") -> bool:
+    """Check if 2 maps are compatable with each other
+
+    Args:
+      g: Another map
+
+    Returns:
+      boolean
+    """
+    type_check = isinstance(g, Map)
+    domain_check = g.domain == self.domain
+    image_check = g.image == self.image
+    return type_check and domain_check and image_check
+
+  def __add__(self, g: "Map") -> "Map":
+    """Add two maps together
+
+    Args:
+      g: Another map
+
+    Returns:
+      sum of maps
+    """
+    assert self.map_is_compatible(g)
+
+    def new_f(p, inverse=False):
+      if inverse == False:
+        return self.f(p) + g.f(p)
+      else:
+        assert 0, "Map is not invertible anymore"
+
+    return type(self)(new_f, domain=self.domain, image=self.image)
+
+  def __radd__(self, g: "Map") -> "Map":
+    """Add g from the right
+
+    Args:
+      g: Another map
+
+    Returns:
+      sum of maps
+    """
+    return self + g
+
+  def __rmul__(self, a: Union[float,"Map"]) -> "Map":
+    """Multiply a map by a scalar or another map
+
+    Args:
+      a: A scalar or map
+
+    Returns:
+      af
+    """
+    is_map = isinstance(a, Map)
+    is_scalar = a in Reals(dimension=1)
+    assert is_map or is_scalar
+
+    def new_f(p, inverse=False):
+      ap = a(p) if is_map else a
+      if inverse == False:
+        return ap*self.f(p)
+      else:
+        return (1/ap)*self.f.inverse(p)
+
+    return type(self)(new_f, domain=self.domain, image=self.image)
+
+  def __sub__(self, g: "Map") -> "Map":
+    """Subtract
+
+    Args:
+      g: Another map
+
+    Returns:
+      f - g
+    """
+    return self + -1.0*g
+
+  def __neg__(self):
+    """Negate this map
+
+    Returns:
+      Negative of this map
+    """
+    return -1.0*self
 
 class LinearMap(Map[Input,Output]):
   """A linear map.

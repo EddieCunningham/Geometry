@@ -16,8 +16,7 @@ import src.util as util
 
 __all__ = ["TimeDependentVectorField",
            "PushforwardVectorField",
-           "pushforward",
-           "lie_bracket"]
+           "pushforward"]
 
 ################################################################################################################
 
@@ -40,7 +39,7 @@ class PushforwardVectorField(VectorField):
     self.X = X
     super().__init__(M=F.image)
 
-  def __call__(self, q: Point) -> TangentVector:
+  def apply_to_point(self, q: Point) -> TangentVector:
     """Evaluate the vector field at a point.
 
     Args:
@@ -65,72 +64,6 @@ def pushforward(F: Map, X: VectorField) -> PushforwardVectorField:
     F_*(X)
   """
   return PushforwardVectorField(F, X)
-
-################################################################################################################
-
-class LieBracketVectorField(VectorField):
-  """The vector field that is the Lie bracket of X and Y
-
-  Args:
-    X: Vector field 1
-    Y: Vector field 2
-
-  Returns:
-    [X, Y]
-  """
-  def __init__(self, X: VectorField, Y: VectorField):
-    assert X.manifold == Y.manifold
-    self.X = X
-    self.Y = Y
-    super().__init__(M=X.manifold)
-
-  def __call__(self, p: Point) -> TangentVector:
-    """Evaluate the vector field at a point.
-
-    Args:
-      p: Point on the manifold.
-
-    Returns:
-      Tangent vector at p.
-    """
-    # The jvps should be on coordinates
-    Xp_nonlocal = self.X(p)
-    p_hat = Xp_nonlocal.p_hat
-
-    # Need a differentiable functions to get the coordinates
-    def get_x_coordinates(p_hat):
-      p = Xp_nonlocal.phi_inv(p_hat)
-      Xp = self.X(p)
-      return Xp.x
-
-    def get_y_coordinates(p_hat):
-      p = Xp_nonlocal.phi_inv(p_hat)
-      Yp = self.Y(p)
-      # Get the coordinates in terms of the x basis
-      return Yp(Xp_nonlocal.phi)
-
-    # First term X^i dY^j/dx^i
-    y_coords, X_dYdx = jax.jvp(get_y_coordinates, (p_hat,), (Xp_nonlocal.x,))
-
-    # Get the second term Y^i dX^j/dx^i
-    _, Y_dXdx = jax.jvp(get_x_coordinates, (p_hat,), (y_coords,))
-
-    # Compute the Lie bracket coordinates
-    new_coords = X_dYdx - Y_dXdx
-
-    return TangentVector(new_coords, Xp_nonlocal.TpM)
-
-def lie_bracket(X: VectorField, Y: VectorField) -> LieBracketVectorField:
-  """Compute the Lie bracket [X, Y]
-
-  Args:
-    X: Vector field 1
-    Y: Vector field 2
-
-  Returns:
-    [X, Y]
-  """
-  return LieBracketVectorField(X, Y)
 
 ################################################################################################################
 

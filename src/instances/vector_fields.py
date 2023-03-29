@@ -51,7 +51,7 @@ class AutonomousVectorField(VectorField):
     out = vf(x)
     assert out.shape == x.shape
 
-  def __call__(self, p: Point) -> TangentVector:
+  def apply_to_point(self, p: Point) -> TangentVector:
     """Evaluate the vector field at a point.
 
     Args:
@@ -99,7 +99,7 @@ class AutonomousCovectorField(CovectorField):
     out = vf(x)
     assert out.shape == x.shape
 
-  def __call__(self, p: Point) -> CotangentVector:
+  def apply_to_point(self, p: Point) -> CotangentVector:
     """Evaluate the covector field at a point.
 
     Args:
@@ -145,7 +145,7 @@ class AutonomousFrame(Frame):
     out = self.vf(x)
     assert out.shape == (self.manifold.dimension, self.manifold.dimension)
 
-  def __call__(self, p: Point) -> TangentBasis:
+  def apply_to_point(self, p: Point) -> TangentBasis:
     """Evaluate the vector field at a point.
 
     Args:
@@ -189,7 +189,7 @@ class AutonomousCoframe(Coframe):
     out = self.vf(x)
     assert out.shape == (self.manifold.dimension, self.manifold.dimension)
 
-  def __call__(self, p: Point) -> CotangentBasis:
+  def apply_to_point(self, p: Point) -> CotangentBasis:
     """Evaluate the vector field at a point.
 
     Args:
@@ -233,21 +233,15 @@ class AutonomousTensorField(TensorField):
     self.manifold = M
     super().__init__(tensor_type, self.manifold)
 
-  def __call__(self, *Xs: Union[Point,List[Union[VectorField,CovectorField]]]) -> Union[Map,Tensor]:
-    """Evaluate the tensor field at a point, or evaluate it on vector/covector fields
+  def apply_to_point(self, p: Point) -> Tensor:
+    """Evaluate the tensor field at a point.
 
     Args:
-      Xs: Either a point or a list of vector/covector fields
+      p: Point on the manifold.
 
     Returns:
-      Tensor at a point, or a map over the manifold
+      Tensor at p.
     """
-    if isinstance(Xs[0], VectorField) or isinstance(Xs[0], CovectorField):
-      return super().__call__(*Xs)
-
-    # Otherwise, the input must be a point
-    p = Xs[0]
-
     # Get the coordinates for p
     chart = self.manifold.get_chart_for_point(p)
     p_coords = chart(p)
@@ -272,7 +266,7 @@ class SimpleTimeDependentVectorField(TimeDependentVectorField):
     out = vf(0.0, x)
     assert out.shape == x.shape
 
-  def __call__(self, t: Coordinate, p: Point) -> TangentVector:
+  def apply_to_point(self, t: Coordinate, p: Point) -> TangentVector:
     # Get the coordinates for p
     chart = self.manifold.get_chart_for_point(p)
     p_coords = chart(p)

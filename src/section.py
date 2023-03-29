@@ -37,8 +37,31 @@ class Section(Map[Input,Output], abc.ABC):
     super().__init__(self.__call__, domain=self.pi.image, image=self.pi.domain)
 
   @abc.abstractmethod
-  def __call__(self, p: Input) -> Output:
+  def apply_to_point(self, p: Input) -> Output:
+    """Evaluate the section at a point.  Output should be a
+    point on the total space.
+
+    Args:
+      p: Point on the manifold.
+
+    Returns:
+      Point on total space.
+    """
     pass
+
+  def __call__(self, p: Point) -> Output:
+    """Evaluate the section at a point.  Output should be a
+    point on the total space.  This function is not abstract
+    because classes that inherit from this can have different
+    functionality.
+
+    Args:
+      p: Point on the manifold.
+
+    Returns:
+      Point on total space.
+    """
+    return self.apply_to_point(p)
 
   def __add__(self, Y: "Section") -> "Section":
     """Add two sections together
@@ -59,7 +82,7 @@ class Section(Map[Input,Output], abc.ABC):
         self.Y = Y
         Section.__init__(self, pi)
 
-      def __call__(self, p: Input) -> Output:
+      def apply_to_point(self, p: Input) -> Output:
         return self.X(p) + self.Y(p)
 
     return SectionSum(self, Y, self.pi)
@@ -88,7 +111,7 @@ class Section(Map[Input,Output], abc.ABC):
         self.is_float = f in Reals(dimension=1)
         Section.__init__(self, pi)
 
-      def __call__(self, p: Input) -> Output:
+      def apply_to_point(self, p: Input) -> Output:
         fp = self.lhs if self.is_float else self.lhs(p)
         Xp = self.X(p)
         return fp*Xp
@@ -127,7 +150,7 @@ class BundleHomomorphismSection(Section):
     pi = self.F.image.get_projection_map()
     super().__init__(pi)
 
-  def __call__(self, p: Point) -> Output:
+  def apply_to_point(self, p: Input) -> Output:
     """Evaluate the section at a point.
 
     Args:
