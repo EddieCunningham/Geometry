@@ -28,11 +28,14 @@ __all__ = ["Tensor",
            "TensorProductSpace",
            "tensor_space_product",
            "tensor_product",
+           "as_tensor_field",
            "SymmetrizedTensor",
            "symmetrize",
            "symmetric_product",
            "TensorBundle",
            "TensorField",
+           "SymmetrizedTensorField",
+           "symmetrize_tensor_field",
            "TensorFieldProduct",
            "tensor_field_product",
            "PullbackOfTensor",
@@ -111,6 +114,54 @@ class Tensor(MultlinearMap[List[Union[CotangentVector,TangentVector]],Coordinate
       contract += ", ".join(self.TkTpM.l_names)
     contract += " ->"
     return einops.einsum(*self.xs, *args, contract)
+
+  def get_coordinates(self, component_function: Chart) -> Coordinate:
+    """Get the coordinates of this vector in terms of coordinates function.
+    If J = dz/dx is the Jacobian of the component function and G = J^{-1},
+    then the contravariant components of this tensor transform with J and
+    the covariant transform with G.
+
+    Args:
+      component_function: A chart that gives coordinates
+
+    Returns:
+      Coordinates of this vector for component_function
+    """
+    # We need to get the coorindates of the transition map
+    F_hat = compose(component_function, self.phi.get_inverse())
+    p_hat = self.phi(self.p)
+    q_hat = component_function(self.p)
+
+    # TODO: IS THERE A VJP/JVP THAT CAN SPEED THIS UP?
+    dzdx = jax.jacobian(F_hat)(p_hat)
+    dxdz = jax.jacobian(F_hat.get_inverse())(q_hat)
+
+    # We need to apply the Jacobian of F to each coordinate axis.
+    # Transpose dxdz so that the contraction makes sense.
+    coordinate_transforms = [dzdx]*self.type.k + [dxdz.T]*self.type.l
+
+    # Get the contraction corresponding to the tensor's coordinates
+    # If this tensor is the product of a 1 and 2 covariant tensor,
+    # this would be 'l0, l1 l2'
+    coord_contract = self.TkTpM.get_coordinate_indices()
+
+    # Get the unique tokens in the coordinate contract
+    # In example, would be 'new_l0 new_l1 new_l2'
+    tokens, _ = util.extract_tokens(coord_contract)
+    output_tokens = ["new_"+t for t in tokens]
+    output_contract = " ".join(output_tokens)
+
+    # Each of the Jacobians transforms a single axis
+    # In running example, would be 'new_l0 l0, new_l1 l1, new_l2 l2'
+    jacobian_contract = ", ".join([f"new_{t} {t}" for t in tokens])
+
+    # Put it all together
+    # In example, would be 'l0, l1 l2, new_l0 l0, new_l1 l1, new_l2 l2 -> new_l0 new_l1 new_l2'
+    contract = coord_contract + ", " + jacobian_contract + " -> " + output_contract
+
+    # Get the coordinates of the output tensor.
+    coords = einops.einsum(*self.xs, *coordinate_transforms, contract)
+    return coords
 
   def __rmul__(self, a: float) -> "Tensor":
     """Multiply the tensor by a scalar
@@ -426,7 +477,7 @@ def tensor_space_product(A: TensorSpace, B: TensorSpace) -> TensorSpace:
   """
   assert A.manifold == B.manifold
   if util.GLOBAL_CHECK:
-    assert A.p == B.p
+    assert jnp.allclose(A.p, B.p)
 
   return TensorProductSpace(A, B)
 
@@ -540,6 +591,11 @@ def symmetric_product(a: Tensor, b: Tensor):
   Returns:
     Symmetric product of a and b
   """
+  if isinstance(a, CotangentVector):
+    a = as_tensor(a)
+  if isinstance(b, CotangentVector):
+    b = as_tensor(b)
+
   return symmetrize(tensor_product(a, b))
 
 ################################################################################################################
@@ -565,6 +621,17 @@ class TensorBundle(FiberBundle):
     self.coordinate_dim = self.type.k + self.type.l
     self.dimension = self.manifold.dimension**(self.coordinate_dim)
     super().__init__(M, EuclideanManifold(dimension=self.dimension))
+
+  def __contains__(self, x: Tensor) -> bool:
+    """Checks to see if x exists in the bundle.
+
+    Args:
+      x: Test point.
+
+    Returns:
+      True if p is in the bundle, False otherwise.
+    """
+    return x.manifold == self.manifold
 
   def get_projection_map(self) -> Map[Tensor,Point]:
     """Get the projection map that goes from the total space
@@ -613,7 +680,7 @@ class TensorField(Section[Point,Tensor], abc.ABC):
   """Section of tensor bundle
 
   Attributes:
-    X: Function that assigns a tensor to every point on the manifold
+    type: The type of the tensor field
     M: The manifold that the tensor field is defined on
   """
   def __init__(self, tensor_type: TensorType, M: Manifold):
@@ -669,9 +736,9 @@ class TensorField(Section[Point,Tensor], abc.ABC):
     if isinstance(x[0], VectorField) or isinstance(x[0], CovectorField):
       return self.apply_to_co_vector_fields(*x)
     else:
-      if util.GLOBAL_CHECK:
-        assert x in self.manifold
       p = x[0]
+      if util.GLOBAL_CHECK:
+        assert p in self.manifold
       return self.apply_to_point(p)
 
   def __rmul__(self, f: Union[Map,float]) -> "TensorField":
@@ -697,7 +764,7 @@ class TensorField(Section[Point,Tensor], abc.ABC):
         Section.__init__(self, pi)
 
       def apply_to_co_vector_fields(self, *Xs: List[Union[VectorField,CovectorField]]) -> Map:
-        return self.T(*Xs).__rmul__(self.lhs) # Not sure why the regular syntax fails
+        return self.lhs*self.T(*Xs)
 
       def apply_to_point(self, p: Point) -> Tensor:
         fp = self.lhs if self.is_float else self.lhs(p)
@@ -747,6 +814,82 @@ class TensorField(Section[Point,Tensor], abc.ABC):
       X + Y
     """
     return self + Y
+
+################################################################################################################
+
+class SymmetrizedTensorField(TensorField, abc.ABC):
+  """The symmetrization of a tensor field.  This will have a non symmetric tensor
+  field that we will just symmetrize when calling this tensor.
+
+  Attributes:
+    type: The type of the tensor field
+    M: The manifold that the tensor field is defined on
+  """
+  def __init__(self, tensor_type: TensorType, M: Manifold):
+    """Creates a new tensor field.
+
+    Args:
+      type: The tensor type (k,l)
+      M: The base manifold.
+    """
+    return super().__init__(tensor_type, M)
+
+  @property
+  @abc.abstractmethod
+  def T(self) -> TensorField:
+    """The non-symmetric tensor field that we'll use to construct
+    a symmetric tensor field
+
+    Returns:
+      A tensor field object
+    """
+    pass
+
+  def apply_to_co_vector_fields(self, *Xs: List[Union[VectorField,CovectorField]]) -> Map:
+    """Evaluate the tensor field on (co)vector fields
+
+    Args:
+      Xs: A list of (co)vector fields
+
+    Returns:
+      A map over the manifold
+    """
+    def fun(p: Point):
+      out = 0.0
+      for Xs_perm in itertools.permutations(Xs):
+        out += self.T.apply_to_co_vector_fields(*Xs_perm)
+
+      k_factorial = math.factorial(len(Xs))
+      out /= k_factorial
+      return out
+    return Map(fun, domain=self.manifold, image=Reals())
+
+  def apply_to_point(self, p: Point) -> Tensor:
+    """Evaluate the tensor field at a point.
+
+    Args:
+      p: Point on the manifold.
+
+    Returns:
+      Tensor at p.
+    """
+    Tp = self.T.apply_to_point(p)
+    return symmetrize(Tp)
+
+def symmetrize_tensor_field(T: TensorField):
+  """Symmetrize a tensor field.
+
+  Args:
+    T: Tensor field to symmetrize
+
+  Returns:
+    Symmetric version of T
+  """
+  class SymmetrizedFromInputTensorField(SymmetrizedTensorField):
+    @property
+    def T(self):
+      return T
+  return SymmetrizedFromInputTensorField(T.type, T.manifold)
 
 ################################################################################################################
 
@@ -819,6 +962,29 @@ def tensor_field_product(A: TensorField, B: TensorField) -> TensorField:
     Tensor product of A and B
   """
   return TensorFieldProduct(A, B)
+
+################################################################################################################
+
+def as_tensor_field(w: CovectorField):
+  """Turn a covector field into a (0,k) tensor field
+
+  Args:
+    w: The covector field
+
+  Returns:
+    w but as a tensor field object
+  """
+  class CovectorFieldAsTensor(TensorField):
+    def __init__(self, w):
+      self.w = w
+      tensor_type = TensorType(0, 1)
+      super().__init__(tensor_type, self.w.manifold)
+
+    def apply_to_point(self, p: Point) -> Tensor:
+      wp = self.w.apply_to_point(p)
+      return as_tensor(wp)
+
+  return CovectorFieldAsTensor(w)
 
 ################################################################################################################
 

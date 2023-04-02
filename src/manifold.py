@@ -10,7 +10,7 @@ import src.util as util
 import itertools
 
 __all__ = ["Chart",
-           "transition_map",
+           "SliceChart",
            "Atlas",
            "Manifold",
            "SubImmersion",
@@ -30,11 +30,19 @@ class Manifold(Set, abc.ABC):
     """Create a manifold object.
 
     Args:
-      atlas: Atlas
+      dimension: Dimension of the manifold
     """
     super().__init__()
     self.dimension = dimension
     self.atlas = self.get_atlas()
+
+  def __str__(self) -> str:
+    """The string representation of this manifold
+
+    Returns:
+      A string
+    """
+    return f"{type(self)}(dimension={self.dimension})"
 
   @abc.abstractmethod
   def get_atlas(self) -> "Atlas":
@@ -99,17 +107,16 @@ class Chart(Diffeomorphism):
     assert isinstance(image, Reals)
     super().__init__(phi, domain=domain, image=image)
 
-  def get_slice_chart(self, mask: Coordinate, consts: Coordinate) -> "Chart":
-    """Creates a new Chart. but where some of the coordinates are fixed
+  def get_slice_chart(self, mask: Coordinate) -> "Chart":
+    """Creates a new slice chart.
 
     Args:
       mask: A mask so that we know which coordinates to fix
-      consts: The values of the coordinates to fix
 
     Returns:
       A slice chart
     """
-    return SliceChart(self, mask, consts)
+    return SliceChart(self, mask)
 
 class SliceChart(Chart):
   """A slice chart is a chart where we have fixed some of the coorindates
@@ -117,45 +124,30 @@ class SliceChart(Chart):
   Attributes:
     chart: The original chart.
     mask: A boolean mask telling us which coordinates to fix.
-    coords: The coordinates to fix.  Ignore the unmasked coordinates.
   """
-  def __init__(self, chart: Chart, mask: jnp.ndarray, coords: Coordinate):
-    assert mask.shape == coords.shape
-    self.chart = original_chart
+  def __init__(self, chart: Chart, mask: jnp.ndarray):
+    self.chart = chart
     self.mask = mask
-    self.coords = coords
+    self.coords = None
 
     # Construct the domain and codomain
     domain = self.chart.domain
     co_dim = mask.sum()
-    image = Reals(dimension=self.chart.image.dimension - co_dim)
+    from src.instances.manifolds import EuclideanManifold
+    image = EuclideanManifold(dimension=self.chart.image.dimension - co_dim)
 
     # Create the new chart function
     def phi(p, inverse=False):
       if inverse == False:
-        x_coords = self.chart(p)
-        return x_coords.at[self.mask]
+        # TODO: MAKE A SAFE VERSION OF THIS
+        self.coords = self.chart(p)
+        return self.coords[self.mask]
       else:
-
         p = jnp.where(self.mask, self.coords, p)
         x = self.chart.inverse(p)
         return x
 
     super().__init__(phi, domain=domain, image=image)
-
-################################################################################################################
-
-def transition_map(phi: Chart, psi: Chart) -> InvertibleFunction:
-  """Create the transition map between the coordinates for each chart.
-
-  Args:
-    phi: Chart 1.
-    psi: Chart 2.
-
-  Returns:
-    psi*phi^{-1}
-  """
-  return compose(psi, phi.get_inverse())
 
 ################################################################################################################
 
@@ -175,6 +167,12 @@ class Atlas(List[Chart]):
       charts = [charts]
 
     self.charts = charts
+
+  def __str__(self):
+    return str(self.chart)
+
+  def __repr__(self):
+    return str(self.charts)
 
   def get_chart_for_point(self, p: Point) -> Chart:
     """Find the chart associated with a point
@@ -287,7 +285,7 @@ class CartesianProductManifold(Manifold):
           assert len(coords) == len(charts)
           return [chart.inverse(coord) for coord, chart in zip(coords, charts)]
 
-      domain = set_cartesian_product()
+      domain = set_cartesian_product(*self.Ms)
       new_chart = Chart(phi=phi, domain=domain, image=Reals(dimension=self.dimension))
       new_charts.append(new_chart)
 

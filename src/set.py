@@ -94,6 +94,14 @@ class Reals(Set):
     self.dimension = dimension
     super().__init__()
 
+  def __str__(self) -> str:
+    """The string representation of this manifold
+
+    Returns:
+      A string
+    """
+    return f"{type(self)}(dimension={self.dimension})"
+
   def __contains__(self, p: Coordinate) -> bool:
     """Checks to see if p exists in this set and is real.
 
@@ -155,6 +163,18 @@ class Reals(Set):
     else:
       dim_check = self.dimension == other.dimension
     return dim_check and type_check
+
+  def get_chart_for_point(self, p: Point) -> "Chart":
+    """Get a chart to use at point p
+
+    Args:
+      The input point
+
+    Returns:
+      The chart that contains p in its domain
+    """
+    from src.manifold import Chart
+    return Chart(lambda x, inverse=False: x, domain=self, image=self)
 
 ################################################################################################################
 

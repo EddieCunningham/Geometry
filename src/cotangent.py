@@ -74,7 +74,7 @@ class CotangentVector(Vector, LinearMap[TangentVector,Coordinate]):
       Coordinates of this vector for component_function
     """
     # This is the inverse of the map from x_coords to component_function_coords
-    psiinv_phi = compose(component_function.get_inverse(), self.phi)
+    psiinv_phi = compose(self.phi, component_function.get_inverse())
     q = component_function(self.p)
     _, vjp = jax.vjp(psiinv_phi.f, q)
     coords, = vjp(self.x)
@@ -178,7 +178,7 @@ class CotangentBasis(VectorSpaceBasis):
 
     # First use a local trivialization of the tangent bundle at the basis
     # in order to get the matrix representation of the basis
-    frame_bundle = FrameBundle(TpM)
+    frame_bundle = FrameBundle(TpM.manifold)
     lt_map = frame_bundle.get_local_trivialization_map(tangent_basis)
     p, matrix = lt_map(tangent_basis)
 
@@ -322,10 +322,11 @@ class FunctionDifferential(CovectorField):
     f: The real valued function
     M: The manifold that the vector field is defined on
   """
-  def __init__(self, f: Map[Point,Coordinate], M: Manifold):
-    assert f.image.dimension == 1
+  def __init__(self, f: Map[Point,Coordinate]):
+    assert (f.image.dimension is None) or (f.image.dimension <= 1)
     assert isinstance(f.image, Reals)
     self.function = f
+    M = self.function.domain
     super().__init__(M)
 
   def apply_to_point(self, p: Point) -> CotangentVector:
@@ -347,7 +348,9 @@ class FunctionDifferential(CovectorField):
     p_hat = phi(p)
 
     # The coordinates change with a vjp
-    z = jax.grad(f_hat.f)(p_hat)
+    out, vjp = jax.vjp(f_hat.f, p_hat)
+    z, = vjp(jnp.ones_like(out))
+    # z = jax.grad(f_hat.f)(p_hat)
 
     coTpM = CotangentSpace(p, self.domain)
     return CotangentVector(z, coTpM)

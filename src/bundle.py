@@ -78,19 +78,17 @@ class FiberBundle(abc.ABC):
     """
     pass
 
+  @abc.abstractmethod
   def __contains__(self, x: Element) -> bool:
-    """Checks to see if x exists in the manifold.  This is the case if
-       the point is in the domain of any chart
+    """Checks to see if x exists in the bundle.
 
     Args:
       x: Test point.
 
     Returns:
-      True if p is in the manifold, False otherwise.
+      True if p is in the bundle, False otherwise.
     """
-    p = self.get_projection_map()(x)
-    UxF = self.get_local_trivialization_map(p).image
-    return x in UxF
+    pass
 
   def get_chart_for_point(self, x: Element) -> Chart:
     """Get a chart to use at point x in the total space.  Do this by
@@ -104,13 +102,13 @@ class FiberBundle(abc.ABC):
     """
     lt = self.get_local_trivialization_map(x)
     UxF = lt.image
-    lt_chart = UxF.get_chart_for_point(x)
+    lt_chart = UxF.get_chart_for_point(lt(x))
     chart = compose(lt_chart, lt)
     return chart
 
 ################################################################################################################
 
-class ProductBundle(CartesianProductManifold, FiberBundle):
+class ProductBundle(CartesianProductManifold,FiberBundle):
   """Trivial bundle is just the product of the base space and fiber.
 
   Attributes:
@@ -125,6 +123,7 @@ class ProductBundle(CartesianProductManifold, FiberBundle):
     Args:
       M: The manifold.
     """
+    self.manifold, self.fiber = M, F
     super().__init__(M, F)
     FiberBundle.__init__(self, M, F)
 
@@ -151,6 +150,18 @@ class ProductBundle(CartesianProductManifold, FiberBundle):
     def phi(x, inverse=False):
       return x
     return Diffeomorphism(x, domain=self, image=image)
+
+  def __contains__(self, x: Element) -> bool:
+    """Checks to see if x exists in the bundle.
+
+    Args:
+      x: Test point.
+
+    Returns:
+      True if p is in the bundle, False otherwise.
+    """
+    p, v = x
+    return (p in self.manifold) and (v in self.fiber)
 
 ################################################################################################################
 
@@ -206,6 +217,17 @@ class TangentBundle(FiberBundle):
     shouldn't matter.
     """
     return None
+
+  def __contains__(self, v: TangentVector) -> bool:
+    """Checks to see if v exists in the bundle.
+
+    Args:
+      v: Test point.
+
+    Returns:
+      True if p is in the bundle, False otherwise.
+    """
+    return (v.p in self.manifold) and (v.x in self.fiber)
 
 class GlobalDifferential(LinearMap[TangentBundle,TangentBundle]):
   """The global differential is the union of all of the
@@ -288,6 +310,17 @@ class CotangentBundle(FiberBundle):
     """
     return None
 
+  def __contains__(self, w: CotangentVector) -> bool:
+    """Checks to see if w exists in the bundle.
+
+    Args:
+      w: Test point.
+
+    Returns:
+      True if p is in the bundle, False otherwise.
+    """
+    return (w.p in self.manifold) and (w.x in self.fiber)
+
 ################################################################################################################
 
 class FrameBundle(FiberBundle, abc.ABC):
@@ -306,6 +339,17 @@ class FrameBundle(FiberBundle, abc.ABC):
       M: The manifold.
     """
     super().__init__(M, GeneralLinearGroup(dim=M.dimension))
+
+  def __contains__(self, x: TangentBasis) -> bool:
+    """Checks to see if x exists in the bundle.
+
+    Args:
+      x: Test point.
+
+    Returns:
+      True if p is in the bundle, False otherwise.
+    """
+    return x.TpM.manifold == self.manifold
 
   def get_projection_map(self) -> Map[TangentBasis,Point]:
     """Get the projection map that goes from the total space
@@ -389,6 +433,17 @@ class CoframeBundle(FiberBundle, abc.ABC):
       M: The manifold.
     """
     super().__init__(M, GeneralLinearGroup(dim=M.dimension))
+
+  def __contains__(self, x: CotangentBasis) -> bool:
+    """Checks to see if x exists in the bundle.
+
+    Args:
+      x: Test point.
+
+    Returns:
+      True if p is in the bundle, False otherwise.
+    """
+    return x.coTpM.manifold == self.manifold
 
   def get_projection_map(self) -> Map[Element,Point]:
     """Get the projection map that goes from the total space

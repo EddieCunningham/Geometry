@@ -80,9 +80,9 @@ def lie_derivative_tests():
   assert jnp.allclose(out1, out2)
 
   # Check that the exterior derivative passes through the lie derivative
-  df = FunctionDifferential(f, M)
+  df = FunctionDifferential(f)
   test1 = lie_derivative(V, df)
-  test2 = FunctionDifferential(lie_derivative(V, f), M)
+  test2 = FunctionDifferential(lie_derivative(V, f))
 
   out1 = test1(X1)(p)
   out2 = test2(X1)(p)

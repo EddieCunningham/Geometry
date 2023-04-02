@@ -195,7 +195,7 @@ class OrthogonalGroup(GeneralLinearGroup):
     if super().__contains__(p) == False:
       return False
 
-    return jnp.allclose(jnp.linalg.svd(p)[1], 1.0)
+    return jnp.allclose(jnp.linalg.svd(p, compute_uv=False), 1.0)
 
 ################################################################################################################
 

@@ -14,11 +14,13 @@ from src.cotangent import *
 from src.tensor import *
 from src.vector_field import *
 from src.section import *
+from src.riemannian_metric import *
 import src.util as util
 
 __all__ = ["AutonomousVectorField",
            "AutonomousCovectorField",
            "AutonomousTensorField",
+           "ParametricRiemannianMetric",
            "AutonomousFrame",
            "AutonomousCoframe",
            "SimpleTimeDependentVectorField"]
@@ -252,6 +254,37 @@ class AutonomousTensorField(TensorField):
     # Construct the tangent covector
     TkTpM = TensorSpace(p, self.tensor_type, self.manifold)
     return Tensor(v_coords, TkTpM=TkTpM)
+
+################################################################################################################
+
+class ParametricRiemannianMetric(RiemannianMetric):
+  """A parametric Riemannian metric
+
+  Attribues:
+    tf: The function that gives us tensors at points
+    M: Manifold
+  """
+  def __init__(self, tf: Callable[[Coordinate], Coordinate], M: Manifold):
+    """Creates a new tensor field.
+
+    Args:
+      tf: Tensor field coordinate function.
+      M: The base manifold.
+    """
+    self.manifold = M
+    super().__init__(self.manifold)
+
+    self._T = AutonomousTensorField(tf, self.type, self.manifold)
+
+  @property
+  def T(self) -> TensorField:
+    """The non-symmetric tensor field that we'll use to construct
+    a symmetric tensor field
+
+    Returns:
+      A tensor field object
+    """
+    return self._T
 
 ################################################################################################################
 

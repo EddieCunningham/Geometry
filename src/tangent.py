@@ -106,7 +106,7 @@ class TangentSpace(VectorSpace):
     """
     point_same = True
     if util.GLOBAL_CHECK:
-      point_same = jnp.allclose(self.p, other.p)
+      point_same = jax.tree_util.tree_all(jax.tree_util.tree_map(jnp.allclose, self.p, other.p))
     return point_same and (self.manifold == other.manifold)
 
   def get_dual_space(self) -> "CotangentSpace":

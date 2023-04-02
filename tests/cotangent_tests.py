@@ -23,21 +23,30 @@ from src.instances.vector_fields import AutonomousVectorField, AutonomousCovecto
 ################################################################################################################
 
 def get_chart_fun(dimension, rng_key):
-  # Construct the vector field over M
-  import nux
-  flow = nux.GLOW(n_layers=2,
-           working_dim=16,
-           hidden_dim=32,
-           n_resnet_layers=2)
 
-  x = random.normal(rng_key, (100, dimension))
-  flow(x, rng_key=rng_key)
-  params = flow.get_params()
-
+  # Just use an linear transformation to change coordinates
   def apply_fun(x, inverse=False):
-    return flow(x[None], params=params, rng_key=rng_key, inverse=inverse)[0][0]
-
+    A = random.normal(rng_key, (dimension, dimension))
+    if inverse == False:
+      return A@x
+    return jnp.linalg.inv(A)@x
   return apply_fun
+
+  # # Construct the vector field over M
+  # import nux
+  # flow = nux.GLOW(n_layers=3,
+  #          working_dim=4,
+  #          hidden_dim=8,
+  #          n_resnet_layers=1)
+
+  # x = random.normal(rng_key, (100, dimension))
+  # flow(x, rng_key=rng_key)
+  # params = flow.get_params()
+
+  # def apply_fun(x, inverse=False):
+  #   return flow(x[None], params=params, rng_key=rng_key, inverse=inverse)[0][0]
+
+  # return apply_fun
 
 ################################################################################################################
 
@@ -139,9 +148,9 @@ def run_all():
   assert jnp.allclose(check1.x, check5.x)
 
   # Test the differential of a scalar function
-  du = FunctionDifferential(u, N)
+  du = FunctionDifferential(u)
   out1 = pullback(F, du)(p)
-  out2 = FunctionDifferential(compose(u, F), M)(p)
+  out2 = FunctionDifferential(compose(u, F))(p)
 
   assert jnp.allclose(out1.x, out2.x)
 
@@ -153,7 +162,7 @@ def run_all():
 
   # Need a closed covector field
   u = Map(_u, domain=M, image=EuclideanManifold(dimension=1))
-  W = FunctionDifferential(u, M)
+  W = FunctionDifferential(u)
 
   t1 = X(W(Y))
   t2 = Y(W(X))

@@ -102,6 +102,8 @@ def composition_test():
   map123 = compose(map3, map2, map1)
   out123 = map123("a")
 
+  assert out3 == out123
+
 def invertible_composition_test():
   """Check that we can compose maps correctly
   """
@@ -142,6 +144,8 @@ def invertible_composition_test():
   map123 = compose(map3, map2, map1)
   out123 = map123("a")
   out123_inv = map123.inverse(out123)
+
+  assert out123_inv == "a"
 
 ################################################################################################################
 

@@ -190,12 +190,6 @@ class VectorSpaceBasis():
     self.V = V
     assert len(self.basis) == self.V.dimension
 
-  def __str__(self):
-    return self.basis
-
-  def __repr__(self):
-    return str(self)
-
   def __getitem__(self, index: int) -> Vector:
     """Get an item of the basis
 

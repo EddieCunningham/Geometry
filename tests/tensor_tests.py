@@ -19,6 +19,7 @@ from src.tensor import *
 import nux
 import src.util as util
 from tests.vector_field_tests import get_vector_field_fun
+from tests.cotangent_tests import get_chart_fun
 
 ################################################################################################################
 
@@ -27,7 +28,7 @@ def cotangent_tensor_product_test():
 
   # Construct a manifold
   M = Sphere(dim=4)
-  p = random.normal(rng_key, (5,)); p = p/jnp.linalg.norm(p)
+  p = random.normal(rng_key, (M.dimension + 1,)); p = p/jnp.linalg.norm(p)
 
   # First build a tensor
   tensor_type = TensorType(3, 3)
@@ -43,6 +44,36 @@ def cotangent_tensor_product_test():
   TpM = TangentSpace(p, M)
   vs = [TangentVector(x, TpM) for x in coords[tensor_type.k:]]
   test = T(*ws, *vs)
+
+  # Check that we can change coordinates correctly
+  # Do this by creating a manifold which uses a different set of charts
+  class SphereCustomChart(Sphere):
+
+    def get_atlas(self):
+      atlas = super().get_atlas()
+
+      # Create a diffeomorphism that we can compose with the regular chart
+      _phi = get_chart_fun(dimension=self.dimension, rng_key=rng_key)
+      phi = Diffeomorphism(_phi, domain=EuclideanManifold(dimension=self.dimension), image=EuclideanManifold(dimension=self.dimension))
+
+      new_charts = []
+      for chart in atlas.charts:
+        new_chart = compose(phi, chart)
+        new_charts.append(new_chart)
+
+      return Atlas(new_charts)
+
+  M2 = SphereCustomChart(dim=4)
+
+  # Create the same tensor as before, but using the
+  # new coordinates
+  tensor_coords2 = T.get_coordinates(M2.get_chart_for_point(p))
+  TkTpM2 = TensorSpace(p, tensor_type, M2)
+  T2 = Tensor(tensor_coords2, TkTpM=TkTpM2)
+
+  # Evaluate the two tensors on the same inputs to
+  test2 = T2(*ws, *vs)
+  assert jnp.allclose(test, test2)
 
   # Now try a tensor product
   rng_key, _ = random.split(rng_key, 2)
@@ -235,6 +266,7 @@ def tensor_field_tests():
   # tensor_type = TensorType(0, 3)
   # T = AutonomousTensorField(get_tensor_field_fun(N, tensor_type, k3), tensor_type, N)
 
+  f = Map(lambda x: x.sum(), domain=N, image=Reals())
 
   Tp = T(Fp)
 

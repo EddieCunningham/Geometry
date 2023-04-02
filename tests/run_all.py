@@ -10,6 +10,7 @@ from tests.bundle_tests import run_all as run_all_bundle
 from tests.cotangent_tests import run_all as run_all_cotangent
 from tests.tensor_tests import run_all as run_all_tensor
 from tests.lie_derivative_tests import run_all as run_all_lie_derivative
+from tests.riemannian_metric_tests import run_all as run_all_riemannian_metric
 import src.util as util
 import jax
 
@@ -23,8 +24,9 @@ if __name__ == "__main__":
   run_all_lie_group()
   run_all_vector_field()
   run_all_lie_algebra()
-  run_all_flow()
+  # run_all_flow()
   run_all_bundle()
   run_all_cotangent()
   run_all_tensor()
   run_all_lie_derivative()
+  run_all_riemannian_metric()

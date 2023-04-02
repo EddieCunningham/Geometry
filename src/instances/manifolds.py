@@ -91,7 +91,7 @@ class EuclideanManifold(Manifold, Reals):
 
 ################################################################################################################
 
-class Sphere(Manifold):
+class Sphere(Manifold, Reals):
   """An N-sphere
 
   Attributes:
@@ -131,7 +131,7 @@ class Sphere(Manifold):
       else:
         return -sigma(-x, inverse=True)
 
-    class DomainNorth(Reals):
+    class DomainNorth(Sphere):
       def __contains__(self, p):
         if jnp.allclose(jnp.linalg.norm(p), 1.0) == False:
           return False
@@ -142,7 +142,10 @@ class Sphere(Manifold):
           return False
         return True
 
-    class DomainSouth(Reals):
+      def get_atlas(self) -> "Atlas":
+        return None
+
+    class DomainSouth(Sphere):
       def __contains__(self, p):
         if jnp.allclose(jnp.linalg.norm(p), 1.0) == False:
           return False
@@ -153,8 +156,11 @@ class Sphere(Manifold):
           return False
         return True
 
-    north_chart = Chart(phi=sigma, domain=DomainNorth(), image=Reals(dimension=self.dim))
-    south_chart = Chart(phi=sigma_tilde, domain=DomainSouth(), image=Reals(dimension=self.dim))
+      def get_atlas(self) -> "Atlas":
+        return None
+
+    north_chart = Chart(phi=sigma, domain=DomainNorth(dim=self.dim), image=Reals(dimension=self.dim))
+    south_chart = Chart(phi=sigma_tilde, domain=DomainSouth(dim=self.dim), image=Reals(dimension=self.dim))
 
     return Atlas([north_chart, south_chart])
 

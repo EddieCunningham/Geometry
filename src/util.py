@@ -1,12 +1,22 @@
 import jax
 import jax.tree_util
+from contextlib import contextmanager
 
-__all__ = ["tree_shapes",
+__all__ = ["global_check_off",
+           "tree_shapes",
            "soft_assert",
            "GLOBAL_CHECK",
            "extract_tokens"]
 
-GLOBAL_CHECK = False
+GLOBAL_CHECK = True
+
+@contextmanager
+def global_check_off():
+  GLOBAL_CHECK = False
+  try:
+    yield
+  finally:
+    GLOBAL_CHECK = True
 
 def tree_shapes(x):
   return jax.tree_util.tree_map(lambda x: x.shape, x)

@@ -33,6 +33,7 @@ def tangent_bundle_tests():
   bA, tangent_coords = random.normal(rng_key, (2, 4, 5))
   tangent_coords = tangent_coords.ravel()
   b, A = bA[:,-1], bA[:,:-1]
+  A, _ = jnp.linalg.qr(A)
   p = (b, A)
 
   # Get a tangent vector, which is a point on the bundle
@@ -70,12 +71,13 @@ def tangent_bundle_tests():
   # The global differential is a smooth bundle homomorphism covering F
   def _F(p, inverse=False):
     b, A = p
+    Q, _ = jnp.linalg.qr(random.normal(rng_key, shape=A.shape))
     if inverse == False:
       b *= 2
-      A *= 2
+      A = A@Q
     else:
       b /= 2
-      A /= 2
+      A = A@Q.T
     return (b, A)
 
   # Construct a bundle homomorphsim
@@ -106,8 +108,8 @@ def tangent_bundle_tests():
     b, A = p
     return (jnp.sin(b)).sum() + (A**2).sum()
 
-  f1 = Map(_f1, domain=TM, image=Reals())
-  f2 = Map(_f2, domain=TM, image=Reals())
+  f1 = Map(_f1, domain=M, image=Reals())
+  f2 = Map(_f2, domain=M, image=Reals())
 
   out1 = (F_tilde(f1*s1 + f2*s2))(p)
   out2 = (f1*F_tilde(s1) + f2*F_tilde(s2))(p)
@@ -129,6 +131,7 @@ def frame_bundle_tests():
   bA, *tangent_coords = random.normal(rng_key, (21, 4, 5))
   tangent_coords = [x.ravel() for x in tangent_coords]
   b, A = bA[:,-1], bA[:,:-1]
+  A, _ = jnp.linalg.qr(A)
   p = (b, A)
 
   # Create a basis for the tangent space
@@ -194,8 +197,8 @@ def frame_bundle_tests():
     b, A = p
     return (jnp.sin(b)).sum() + (A**2).sum()
 
-  f1 = Map(_f1, domain=FB, image=Reals())
-  f2 = Map(_f2, domain=FB, image=Reals())
+  f1 = Map(_f1, domain=M, image=Reals())
+  f2 = Map(_f2, domain=M, image=Reals())
 
   out1 = (F_tilde(f1*s1 + f2*s2))(p)
   out2 = (f1*F_tilde(s1) + f2*F_tilde(s2))(p)

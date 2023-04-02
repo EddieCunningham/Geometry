@@ -1,7 +1,7 @@
 from functools import partial
 from typing import Callable, List, TypeVar, Generic, Tuple, Union
 import src.util
-from functools import partial
+from functools import partial, reduce
 import jax.numpy as jnp
 import jax
 from src.set import *
@@ -43,6 +43,14 @@ class Map(Generic[Input,Output]):
     self.f = f
     self.domain = domain
     self.image = image
+
+  def __str__(self) -> str:
+    """The string representation of this map
+
+    Returns:
+      A string
+    """
+    return f"f: {self.f}, domain: {str(self.domain)}, image: {str(self.image)}"
 
   def __call__(self, p: Point) -> Point:
     """Applies the function on p.
@@ -173,7 +181,7 @@ class Map(Generic[Input,Output]):
     image_check = g.image == self.image
     return type_check and domain_check and image_check
 
-  def __add__(self, g: "Map") -> "Map":
+  def __add__(self, g: Union[float,"Map"]) -> "Map":
     """Add two maps together
 
     Args:
@@ -182,17 +190,25 @@ class Map(Generic[Input,Output]):
     Returns:
       sum of maps
     """
-    assert self.map_is_compatible(g)
+    is_map = isinstance(g, Map)
+    is_scalar = g in Reals(dimension=1)
+    assert is_map or is_scalar
+
+    if is_map:
+      assert self.map_is_compatible(g)
 
     def new_f(p, inverse=False):
       if inverse == False:
-        return self.f(p) + g.f(p)
+        if is_map:
+          return self.f(p) + g.f(p)
+        else:
+          return self.f(p) + g
       else:
         assert 0, "Map is not invertible anymore"
 
-    return type(self)(new_f, domain=self.domain, image=self.image)
+    return Map(new_f, domain=self.domain, image=self.image)
 
-  def __radd__(self, g: "Map") -> "Map":
+  def __radd__(self, g: Union[float,"Map"]) -> "Map":
     """Add g from the right
 
     Args:
@@ -203,7 +219,7 @@ class Map(Generic[Input,Output]):
     """
     return self + g
 
-  def __rmul__(self, a: Union[float,"Map"]) -> "Map":
+  def __mul__(self, a: Union[float,"Map"]) -> "Map":
     """Multiply a map by a scalar or another map
 
     Args:
@@ -223,7 +239,18 @@ class Map(Generic[Input,Output]):
       else:
         return (1/ap)*self.f.inverse(p)
 
-    return type(self)(new_f, domain=self.domain, image=self.image)
+    return Map(new_f, domain=self.domain, image=self.image)
+
+  def __rmul__(self, a: Union[float,"Map"]) -> "Map":
+    """Multiply a map by a scalar or another map
+
+    Args:
+      a: A scalar or map
+
+    Returns:
+      af
+    """
+    return self*a
 
   def __sub__(self, g: "Map") -> "Map":
     """Subtract
@@ -344,7 +371,9 @@ class _InvertibleMixin():
     Returns:
       A new Function object that is the inverse of this one.
     """
-    return Map(partial(self.f, inverse=True), domain=self.image, image=self.domain)
+    def f(x, inverse=False):
+      return self.f(x, inverse=not inverse)
+    return InvertibleMap(f, domain=self.image, image=self.domain)
 
   def inverse(self, q: Output) -> Input:
     """Applies the inverse function on q.
@@ -379,43 +408,29 @@ class Diffeomorphism(Map[Input,Output], _InvertibleMixin):
 
 def compose(*maps: List[Map]) -> Map:
   """Creates a map that is the composition of the provided maps.
-  Returns maps[K]*...*maps[1]*maps[0]
+  Returns maps[0]*...*maps[-2]*maps[-1]
 
   Args:
     maps: At least 2 maps.
 
   Returns:
-    Returns maps[K]*...*maps[1]*maps[0].
+    Returns maps[0]*...*maps[-2]*maps[-1].
   """
   assert len(maps) >= 2
-  maps = maps[::-1]
 
   # Ensure that all inputs are maps
   for phi in maps:
     assert isinstance(phi, Map)
 
-  # Ensure that the domains and images are compatible
-  image = maps[0].image
-  for phi in maps[1:]:
-    # assert phi.domain == image
-    assert phi.domain, type(image)
-    image = phi.image
-
   # Construct the composition.
   def composition(p, inverse=False):
+    def _compose(f, g):
+      return lambda *a, **kw: g(f(*a, **kw))
     if inverse == False:
-      def _compose(fs):
-        if len(fs) == 1:
-          return fs[0].f(p)
-        return fs[-1](_compose(fs[:-1]))
-      return _compose(maps)
-
+      return reduce(_compose, maps[::-1])(p)
     else:
-      def _compose(fs):
-        if len(fs) == 1:
-          return fs[-1].inverse(p)
-        return fs[0].inverse(_compose(fs[1:]))
-      return _compose(maps)
+      inverse_maps = [m.get_inverse() for m in maps]
+      return reduce(_compose, inverse_maps)(p)
 
   # Figure out what return type to use
   map_class = Map
@@ -424,6 +439,6 @@ def compose(*maps: List[Map]) -> Map:
     map_class = maps[0].__class__
 
   # Construct the return map
-  return map_class(composition, domain=maps[0].domain, image=maps[-1].image)
+  return map_class(composition, domain=maps[-1].domain, image=maps[0].image)
 
 ################################################################################################################
