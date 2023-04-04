@@ -23,6 +23,62 @@ import src.util as util
 from tests.vector_field_tests import get_vector_field_fun
 from tests.tensor_tests import get_tensor_field_fun
 
+def symmetrize_tests():
+  rng_key = random.PRNGKey(0)
+
+  # Construct a manifold
+  M = Sphere(dim=4)
+  p = random.normal(rng_key, (M.dimension + 1,)); p = p/jnp.linalg.norm(p)
+
+  # First build a tensor
+  tensor_type = TensorType(3, 3)
+  tensor_coords = random.normal(rng_key, [4]*sum(tensor_type))
+  TkTpM = TensorSpace(p, tensor_type, M)
+  T = Tensor(tensor_coords, TkTpM=TkTpM)
+
+  # Evaluate it on some cotangent and tangent vectors
+  coords = random.normal(rng_key, (sum(tensor_type), M.dim))
+  coTpM = CotangentSpace(p, M)
+  ws = [CotangentVector(x, coTpM) for x in coords[:tensor_type.k]]
+
+  # Now try a tensor product
+  rng_key, _ = random.split(rng_key, 2)
+  tangent_coords = random.normal(rng_key, (3, M.dim))
+  TpM = TangentSpace(p, M)
+  v1 = TangentVector(tangent_coords[0], TpM)
+  v2 = TangentVector(tangent_coords[1], TpM)
+  v3 = TangentVector(tangent_coords[2], TpM)
+
+  w1, w2, w3 = ws[:3]
+  w1w2w3 = tensor_product(tensor_product(w1, w2), w3)
+
+  # Check symmetrization
+  SymT = symmetrize(w1w2w3)
+  out1 = SymT(v1, v2, v3)
+  out2 = SymT(v1, v3, v2)
+  out3 = SymT(v2, v1, v3)
+  out4 = SymT(v2, v3, v1)
+  out5 = SymT(v3, v1, v2)
+  out6 = SymT(v3, v2, v1)
+  assert jnp.allclose(out1, out2)
+  assert jnp.allclose(out1, out3)
+  assert jnp.allclose(out1, out4)
+  assert jnp.allclose(out1, out5)
+  assert jnp.allclose(out1, out6)
+
+  out1_ = SymT.call_unvectorized(v1, v2, v3)
+  out2_ = SymT.call_unvectorized(v1, v3, v2)
+  out3_ = SymT.call_unvectorized(v2, v1, v3)
+  out4_ = SymT.call_unvectorized(v2, v3, v1)
+  out5_ = SymT.call_unvectorized(v3, v1, v2)
+  out6_ = SymT.call_unvectorized(v3, v2, v1)
+  assert jnp.allclose(out1_, out1)
+  assert jnp.allclose(out2_, out2)
+  assert jnp.allclose(out3_, out3)
+  assert jnp.allclose(out4_, out4)
+  assert jnp.allclose(out5_, out5)
+  assert jnp.allclose(out6_, out6)
+
 ################################################################################################################
 
 def example_13p11():
@@ -118,6 +174,7 @@ def gradient_tests():
 
 def run_all():
   jax.config.update("jax_enable_x64", True)
+  symmetrize_tests()
   example_13p11()
   gradient_tests()
 

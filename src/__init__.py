@@ -12,6 +12,7 @@ from src.bundle import *
 from src.tensor import *
 from src.lie_derivative import *
 from src.riemannian_metric import *
+from src.differential_form import *
 
 from src.instances.manifolds import *
 from src.instances.lie_groups import *

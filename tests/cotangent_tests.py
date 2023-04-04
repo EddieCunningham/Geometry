@@ -24,7 +24,7 @@ from src.instances.vector_fields import AutonomousVectorField, AutonomousCovecto
 
 def get_chart_fun(dimension, rng_key):
 
-  # Just use an linear transformation to change coordinates
+  # Just use an linear transformation to change coordinates.  Using a flow introduces numerical instabilities.
   def apply_fun(x, inverse=False):
     A = random.normal(rng_key, (dimension, dimension))
     if inverse == False:

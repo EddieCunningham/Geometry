@@ -156,17 +156,17 @@ class VectorSpace(EuclideanManifold):
     return Atlas([self.chart])
 
   def get_basis(self) -> List[Vector]:
-    """Get a basis of vectors for the tangent space
+    """Get a basis of vectors for the vector space
 
     Returns:
-      A list of tangent vectors that form a basis for the tangent space
+      A list of vector that form a basis for the vector space
     """
     eye = jnp.eye(self.dimension)
     basis = []
     for i in range(self.dimension):
       v = self.Element(eye[i], self)
       basis.append(v)
-    return basis
+    return VectorSpaceBasis(basis)
 
 ################################################################################################################
 

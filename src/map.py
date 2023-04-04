@@ -271,6 +271,8 @@ class Map(Generic[Input,Output]):
     """
     return -1.0*self
 
+################################################################################################################
+
 class LinearMap(Map[Input,Output]):
   """A linear map.
 
@@ -279,7 +281,21 @@ class LinearMap(Map[Input,Output]):
     domain: A set that the input to map lives in.
     image: Where the map goes to.
   """
-  pass
+
+  def determinant(self) -> Coordinate:
+    """Get the determinant for this linear map.  This is
+    invariant to the choice of coordinates that are used.
+
+    Args:
+      None
+
+    Returns:
+      The determinant of this linear map
+    """
+    assert self.domain.dimension == self.image.dimension
+    return jnp.linalg.det(self.get_coordinates())
+
+################################################################################################################
 
 class MultlinearMap(LinearMap[List[Input],Output]):
   """A multilinear map.
@@ -296,7 +312,7 @@ class IdentityMap(Map[Input,Output]):
 
   Attributes:
   """
-  def __init__(self, *, manifold: Set):
+  def __init__(self, manifold: Set, **kwargs):
     """Creates a new identity map.
 
     Args:
@@ -304,20 +320,15 @@ class IdentityMap(Map[Input,Output]):
       domain: Must be a set of Real numbers.
       image: Must be a set of Real numbers.
     """
-    self.f = lambda x: x
-    self.domain = manifold
-    self.image = manifold
+    self.manifold = manifold
 
-  def __call__(self, p: Point) -> Point:
-    """Applies the function on p.
+    def f(x, inverse=False):
+      if inverse == False:
+        return x.ravel()
+      else:
+        return x.reshape()
 
-    Args:
-      p: An input point.
-
-    Returns:
-      f(p)
-    """
-    return p
+    super().__init__(lambda x: x, domain=manifold, image=manifold)
 
 class ProjectionMap(Map[Tuple[Point],Point]):
   """Projection map onto the "idx"'th index

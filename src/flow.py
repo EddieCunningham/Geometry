@@ -39,8 +39,7 @@ class IntegralCurve(Map[Coordinate,Point]):
     self.p0 = p0
     self.V = V
     self.manifold = self.V.manifold
-    self.domain = Reals()
-    self.image = self.manifold
+    super().__init__(self.__call__, domain=Reals(), image=self.manifold)
 
   def __call__(self, t: Coordinate) -> Point:
     """Evaluate the integral curve at t
@@ -51,15 +50,26 @@ class IntegralCurve(Map[Coordinate,Point]):
     Returns:
       Value at t
     """
-    # Integrate on the manifold starting at t=0
-    def f(t, p, args):
-      # Evaluate the vector field and get Euclidean coordinates
+    # Will be using the same chart for all points on the trajectory!
+    # TODO: Integrate using dynamic charts
+    chart = self.manifold.get_chart_for_point(self.p0)
+    p0_hat = chart(self.p0)
+
+    # Integrate on the manifold in coordinate space
+    def f(t, p_hat, args):
+      # Get the point corresponding to the current coordintes
+      p = chart.inverse(p_hat)
+
+      # Evaluate the vector field and get coordinates of the manifold
       Vp = self.V(p)
-      return Vp(IdentityMap(manifold=self.manifold))
+
+      # Get the coordinate representation of this vector using
+      # the chart coordinates
+      return Vp.get_coordinates(chart)
 
     term = diffrax.ODETerm(f)
     solver = diffrax.Dopri5()
-    solution = diffrax.diffeqsolve(term, solver, t0=0.0, t1=t, dt0=0.001, y0=self.p0)
+    solution = diffrax.diffeqsolve(term, solver, t0=0.0, t1=t, dt0=0.001, y0=p0_hat)
     z = solution.ys[0]
     return z
 
@@ -163,7 +173,7 @@ class TimeDependentFlow(Map[Tuple[Coordinate,Coordinate,Point],Point]):
     def f(t, p, args):
       # Evaluate the vector field and get Euclidean coordinates
       Vp = self.V(t, p)
-      return Vp(IdentityMap(manifold=self.manifold))
+      return Vp.get_coordinates(IdentityMap(manifold=self.manifold))
 
     term = diffrax.ODETerm(f)
     solver = diffrax.Dopri5()

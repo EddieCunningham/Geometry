@@ -44,7 +44,14 @@ class TangentVector(Vector):
     # Also keep track of the point that the tangent space is defined on
     # and its coordinates
     self.p = self.TpM.p
-    self.p_hat = self.phi(self.p)
+
+    # self.p_hat = self.phi(self.p)
+
+  @property
+  def p_hat(self):
+    if hasattr(self, "_p_hat") == False:
+      self._p_hat = self.phi(self.p)
+    return self._p_hat
 
   def __call__(self, f: Function) -> Coordinate:
     """Apply the tangent vector to f.
@@ -117,6 +124,27 @@ class TangentSpace(VectorSpace):
     """
     from src.cotangent import CotangentSpace
     return CotangentSpace(self.p, self.manifold)
+
+  def get_basis(self) -> "TangentBasis":
+    """Get a basis of vectors for the vector space
+
+    Returns:
+      A list of vector that form a basis for the vector space
+    """
+    eye = jnp.eye(self.dimension)
+    basis = []
+    for i in range(self.dimension):
+      v = TangentVector(eye[i], self)
+      basis.append(v)
+    return TangentBasis(basis, self)
+
+  def get_dual_basis(self) -> "CotangentBasis":
+    """Get a basis for the dual space
+
+    Returns:
+      Cotangent space basis
+    """
+    return self.get_dual_space().get_basis()
 
 ################################################################################################################
 

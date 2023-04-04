@@ -24,7 +24,11 @@ if __name__ == "__main__":
   run_all_lie_group()
   run_all_vector_field()
   run_all_lie_algebra()
-  # run_all_flow()
+
+  util.GLOBAL_CHECK = False
+  run_all_flow()
+  util.GLOBAL_CHECK = True
+
   run_all_bundle()
   run_all_cotangent()
   run_all_tensor()

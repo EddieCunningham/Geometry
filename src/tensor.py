@@ -2,7 +2,7 @@ from functools import partial
 from typing import Callable, List, Optional, Union, Tuple
 from collections import namedtuple
 import src.util
-from functools import partial
+from functools import partial, reduce
 import jax
 import jax.numpy as jnp
 from src.set import *
@@ -29,13 +29,8 @@ __all__ = ["Tensor",
            "tensor_space_product",
            "tensor_product",
            "as_tensor_field",
-           "SymmetrizedTensor",
-           "symmetrize",
-           "symmetric_product",
            "TensorBundle",
            "TensorField",
-           "SymmetrizedTensorField",
-           "symmetrize_tensor_field",
            "TensorFieldProduct",
            "tensor_field_product",
            "PullbackOfTensor",
@@ -59,6 +54,7 @@ class Tensor(MultlinearMap[List[Union[CotangentVector,TangentVector]],Coordinate
     # assert x.ndim == TkTpM.coordinate_dim
     self.xs = x
     self.TkTpM = TkTpM
+    self.manifold = self.TkTpM.manifold
     self.phi = self.TkTpM.phi
     self.phi_inv = self.phi.get_inverse()
     self.p = self.TkTpM.p
@@ -127,6 +123,9 @@ class Tensor(MultlinearMap[List[Union[CotangentVector,TangentVector]],Coordinate
     Returns:
       Coordinates of this vector for component_function
     """
+    if component_function == self.phi:
+      return self.get_dense_coordinates()
+
     # We need to get the coorindates of the transition map
     F_hat = compose(component_function, self.phi.get_inverse())
     p_hat = self.phi(self.p)
@@ -180,9 +179,7 @@ class Tensor(MultlinearMap[List[Union[CotangentVector,TangentVector]],Coordinate
     return Tensor(*xs, TkTpM=self.TkTpM)
 
   def __add__(self, Y: "Tensor") -> "Tensor":
-    """Add two tensors together.  Whatever factorization we have
-    of the coordinates will be removed if the coordinates of each
-    tensor are not the same.
+    """Add two tensors together.
 
     Args:
       Y: Another tensor
@@ -193,19 +190,13 @@ class Tensor(MultlinearMap[List[Union[CotangentVector,TangentVector]],Coordinate
     # Must be the same type
     assert isinstance(Y, Tensor)
     assert self.type == Y.type
+    x_coords = self.get_dense_coordinates()
+    y_coords = Y.get_coordinates(self.phi)
 
-    # Check to see if we can keep the same coordinate factorization
-    use_dense = False
-    for x, y in zip(self.xs, Y.xs):
-      if x.shape != y.shape:
-        use_dense = True
-
-    if use_dense:
-      x_coords, y_coords = self.get_dense_coordinates(), Y.get_dense_coordinates()
-      return Tensor(x_coords + y_coords, TkTpM=self.TkTpM)
-    else:
-      new_xs = [x + y for x, y in zip(self.xs, Y.xs)]
-      return Tensor(*new_xs, TkTpM=self.TkTpM)
+    # Need to create a new tensor space to get the correct
+    # contraction indices
+    TkTpM = TensorSpace(self.p, self.type, self.manifold)
+    return Tensor(x_coords + y_coords, TkTpM=TkTpM)
 
   def __radd__(self, Y: "Tensor") -> "Tensor":
     """Add Y from the right
@@ -284,6 +275,14 @@ class TensorSpace(VectorSpace):
     return " ".join(self.k_names) + " " + " ".join(self.l_names)
 
   def get_tensor_at(self, xs):
+    """Construct a tensor from an input of coordinates.
+
+    Args:
+      xs: Coordinates
+
+    Returns:
+      Tensor object with the coordinates "xs"
+    """
     return Tensor(*xs, TkTpM=self)
 
   def get_atlas(self):
@@ -293,6 +292,7 @@ class TensorSpace(VectorSpace):
       Atlas object
     """
     def chart_fun(v, inverse=False):
+      assert 0, "Need to implement correctly and make modifications for symmetric and alternating spaces"
       contract = self.get_coordinate_indices()
       if inverse == False:
         assert isinstance(v, self.Element)
@@ -304,29 +304,87 @@ class TensorSpace(VectorSpace):
     self.chart = Chart(chart_fun, domain=self, image=Reals(dimension=self.dimension))
     return Atlas([self.chart])
 
+  def get_basis(self, dual: Optional[bool]=False) -> List[Tensor]:
+    """Get a basis of vectors for this tensor space
+
+    Args:
+      dual: Get the dual basis?
+
+    Returns:
+      A list of tensors that form a basis for the tensor space
+    """
+
+    # Contravariant part first
+    contravariant_bases = []
+    for i in range(self.type.k):
+      TpM = TangentSpace(self.p, self.manifold)
+      basis = TpM.get_basis() if dual == False else TpM.get_dual_basis()
+      contravariant_bases.append(basis)
+
+    # Next, covariant part
+    covariant_bases = []
+    for i in range(self.type.l):
+      coTpM = CotangentSpace(self.p, self.manifold)
+      basis = coTpM.get_basis() if dual == False else coTpM.get_dual_basis()
+      covariant_bases.append(basis)
+
+    # A basis tensor consists of some combination of the
+    # different basis (co)vectors for each space.
+    basis = []
+    for contravariant_basis in itertools.product(*contravariant_bases):
+      for covariant_basis in itertools.product(*covariant_bases):
+        basis_tensor = tensor_product(*contravariant_basis, *covariant_basis)
+        basis.append(basis_tensor)
+
+    assert len(basis) == self.dimension
+    return basis
+
+  def get_dual_basis(self) -> List[Tensor]:
+    """Get a basis of vectors for this tensor space
+
+    Returns:
+      A list of tensors that form a basis for the tensor space
+    """
+    return self.get_basis(dual=True)
+
 ################################################################################################################
 
 class TensorProductTensor(Tensor):
-  """A tensor that comes from the tensor product of two tensors
+  """A tensor that comes from the tensor product of tensors
 
   Attributes:
-    a: Tensor a
-    b: Tensor b
+    Ts: A list of tensors
   """
-  def __init__(self, a: Tensor, b: Tensor):
+  def __init__(self, *Ts: List[Tensor]):
     """Creates a new tensor product tensor.
 
     Args:
-      a: Tensor a
-      b: Tensor b
+      Ts: A list of tensors
     """
-    self.a = a
-    self.b = b
+    self.Ts = Ts
 
     # Append the lists
-    self.xs = a.xs + b.xs
-    self.TkTpM = tensor_space_product(self.a.TkTpM, self.b.TkTpM)
+    self.xs = reduce(lambda x, y: x + y, [T.xs for T in self.Ts])
+    self.TkTpM = tensor_space_product(*[T.TkTpM for T in self.Ts])
     super().__init__(*self.xs, TkTpM=self.TkTpM)
+
+  def decompose(self) -> List[Union[TangentVector,CotangentVector,Tensor]]:
+    """Split a product of tensors back into their components and cast the
+    types to tangent/cotangent vectors if possible.
+
+    Returns:
+      A list of tensors
+    """
+    new_Ts = []
+    for T in self.Ts:
+      if T.type == TensorType(1, 0):
+        new_T = TangentVector(T.xs[0], TangentSpace(self.p, self.manifold))
+      elif T.type == TensorType(0, 1):
+        new_T = CotangentVector(T.xs[0], CotangentSpace(self.p, self.manifold))
+      else:
+        new_T = T
+      new_Ts.append(new_T)
+    return new_Ts
 
   def call_unvectorized(self, *Xs: List[Union[CotangentVector,TangentVector]]) -> Coordinate:
     """Apply the tensor to the inputs by applying the vectors to each tensor.
@@ -341,37 +399,27 @@ class TensorProductTensor(Tensor):
     # Apply the cotangent vectors first and then the tangent vectors
     assert len(Xs) == self.type.k + self.type.l
 
-    # The first a.k elements of Xs should be the covectors for a
-    start = 0
-    end = self.a.type.k
-    for i, w in enumerate(Xs[start:end]):
-      assert isinstance(w, CotangentVector)
-
-    # The next b.k elements of Xs should be the covectors for b
-    start = end
-    end += self.b.type.k
-    for i, w in enumerate(Xs[start:end]):
-      assert isinstance(w, CotangentVector)
-
-    # The next a.l elements of Xs should be the vectors for a
-    start = end
-    end += self.a.type.l
-    for i, w in enumerate(Xs[start:end]):
-      assert isinstance(w, TangentVector)
-
-    # The next b.l elements of Xs should be the vectors for b
-    start = end
-    end += self.b.type.l
-    for i, w in enumerate(Xs[start:end]):
-      assert isinstance(w, TangentVector)
-
+    # Extract the covectors and tangent vectors
     covectors = Xs[:self.type.k]
+    for w in covectors:
+      assert isinstance(w, CotangentVector)
+
     vectors = Xs[self.type.k:]
+    for X in vectors:
+      assert isinstance(X, TangentVector)
 
-    out1 = self.a(*covectors[:self.a.type.k], *vectors[:self.a.type.l])
-    out2 = self.b(*covectors[self.a.type.k:], *vectors[self.a.type.l:])
+    # Apply each of the inputs to the tensors
+    start_k = 0
+    start_l = 0
+    out = 1.0
+    for T in self.Ts:
+      end_k = start_k + T.type.k
+      end_l = start_l + T.type.l
+      out *= T(*covectors[start_k:end_k], *vectors[start_l:end_l])
 
-    return out1*out2
+      start_k, start_l = end_k, end_l
+
+    return out
 
 ################################################################################################################
 
@@ -385,19 +433,22 @@ class TensorProductSpace(TensorSpace):
   """
   Element = TensorProductTensor
 
-  def __init__(self, A: TensorSpace, B: TensorSpace):
+  def __init__(self, *spaces: List[TensorSpace]):
     """Creates a new tensor product space
 
     Args:
-      A: First tensor
-      B: Second tensor
+      spaces: A list of tensor spaces
     """
-    assert A.manifold == B.manifold
-    self.A = A
-    self.B = B
-    self.type = A.type + B.type
+    manifold = spaces[0].manifold
+    assert all(S.manifold == manifold for S in spaces)
 
-    super().__init__(self.A.p, self.type, self.A.manifold)
+    self.manifold = manifold
+    self.p = spaces[0].p
+
+    self.spaces = spaces
+    self.type = reduce(lambda x, y: x + y, [S.type for S in self.spaces])
+
+    super().__init__(self.p, self.type, self.manifold)
 
   def get_coordinate_indices(self) -> str:
     """A (2, 3) tensor and (2, 2) tensor have indices
@@ -410,29 +461,34 @@ class TensorProductSpace(TensorSpace):
     Returns:
       Coordinate indices
     """
-    a_contract = self.A.get_coordinate_indices()
-    b_contract = self.B.get_coordinate_indices()
+    def increase_contraction(tensor_type: TensorType, contract: str):
+      new_contract = ""
+      contract_elements = contract.split(", ")
+      for contract_element_indices in contract_elements:
+        indices = contract_element_indices.split(" ")
 
-    new_b_contract = ""
-    b_contract_elements = b_contract.split(", ")
-    for b_contract_element_indices in b_contract_elements:
-      indices = b_contract_element_indices.split(" ")
+        new_indices = ""
+        for index in indices:
+          if index[0] == "k":
+            new_index = "k" + str(tensor_type.k + int(index[1:]))
+          else:
+            assert index[0] == "l"
+            new_index = "l" + str(tensor_type.l + int(index[1:]))
+          new_indices += new_index + " "
 
-      new_indices = ""
-      for index in indices:
-        if index[0] == "k":
-          new_index = "k" + str(self.A.type.k + int(index[1:]))
-        else:
-          assert index[0] == "l"
-          new_index = "l" + str(self.A.type.l + int(index[1:]))
-        new_indices += new_index + " "
+        # Trim the last space
+        new_indices = new_indices[:-1]
+        new_contract += new_indices + ","
+      new_contract = new_contract[:-1]
+      return new_contract
 
-      # Trim the last space
-      new_indices = new_indices[:-1]
-      new_b_contract += new_indices + ","
-    new_b_contract = new_b_contract[:-1]
+    contract = self.spaces[0].get_coordinate_indices()
+    tensor_type = self.spaces[0].type
+    for space in self.spaces[1:]:
+      old_contract = space.get_coordinate_indices()
+      contract += ", " + increase_contraction(tensor_type, old_contract)
+      tensor_type += space.type
 
-    contract = a_contract + ", " + new_b_contract
     return contract
 
   def get_tensor_at(self, xs):
@@ -447,6 +503,7 @@ class TensorProductSpace(TensorSpace):
     Returns:
       TensorProductTensor object
     """
+    assert 0, "implement this"
     contract = self.get_coordinates()
 
     x_contracts = contract.split(", ")
@@ -465,138 +522,50 @@ class TensorProductSpace(TensorSpace):
 
     return tensor_product
 
-def tensor_space_product(A: TensorSpace, B: TensorSpace) -> TensorSpace:
+def tensor_space_product(*spaces: List[TensorSpace]) -> TensorSpace:
   """Tensor product of tensor spaces
 
   Args:
-    w: Tensor 1
-    n: Tensor 2
+    spaces: A list of tensor spaces
 
   Returns:
-    A new tensor of degree equal to the sum of that of w and n
+    A new tensor of degree equal to the sum of that of the ones in spaces
   """
-  assert A.manifold == B.manifold
-  if util.GLOBAL_CHECK:
-    assert jnp.allclose(A.p, B.p)
-
-  return TensorProductSpace(A, B)
+  return TensorProductSpace(*spaces)
 
 ################################################################################################################
 
-def as_tensor(w: CotangentVector):
-  """Turn a cotangent vector into a tensor object
+def as_tensor(T: Union[CotangentVector,TangentVector]):
+  """Turn a (co)vector into a tensor object
 
   Args:
-    w: A cotangnet vector
+    T: A (co)tangnet vector
 
   Returns:
-    A tensor that is equivalent to w
+    A tensor that is equivalent to T
   """
-  assert isinstance(w, CotangentVector)
-  space = TensorSpace(w.coTpM.p, TensorType(0, 1), w.coTpM.manifold)
-  return Tensor(w.x, TkTpM=space)
+  if isinstance(T, CotangentVector):
+    space = TensorSpace(T.coTpM.p, TensorType(0, 1), T.coTpM.manifold)
+  elif isinstance(T, TangentVector):
+    space = TensorSpace(T.TpM.p, TensorType(1, 0), T.TpM.manifold)
+  elif isinstance(T, Tensor):
+    return T
+  else:
+    assert 0, "Invalid input"
+  return Tensor(T.x, TkTpM=space)
 
-def tensor_product(w: Tensor, n: Tensor) -> Tensor:
+def tensor_product(*Ts: List[Tensor]) -> Tensor:
   """Tensor product
 
   Args:
-    w: Tensor 1
-    n: Tensor 2
+    Ts: A list of tensors
 
   Returns:
     A new tensor of degree equal to the sum of that of w and n
   """
-  # Try casting w and n as tensors in the event that they are cotangent or tangent vectors
-  if isinstance(w, CotangentVector):
-    w = as_tensor(w)
-  if isinstance(n, CotangentVector):
-    n = as_tensor(n)
-
-  return TensorProductTensor(w, n)
-
-################################################################################################################
-
-class SymmetrizedTensor(Tensor):
-  """The symmetrization of a tensor
-
-  Attributes:
-    x: The coordinates of the vector in the basis induced by a chart.
-    TkTpM: The space of mixed type tensors that this tensor lives on
-  """
-  def __init__(self, T: Tensor):
-    """Creates a symmetrized tensor out of T.  This happens by
-    averaging all permutations of the inputs at T.  Only works
-    for covariant tensors
-
-    Args:
-      T: The tensor
-    """
-    assert T.type.k == 0
-    self.T = T
-
-    # Make a set of dense coordinates
-    x = jnp.zeros([self.T.TkTpM.manifold.dimension]*self.T.type.l)
-
-    # Get the new coordinates by summing all of the permutations
-    contract = self.T.TkTpM.get_coordinate_indices()
-    tokens, reconstruct = util.extract_tokens(contract)
-
-    for token_permutation in itertools.permutations(tokens):
-      perm_contract = reconstruct(token_permutation)
-      perm_contract += " -> " + " ".join(tokens)
-      perm_x = einops.einsum(*self.T.xs, perm_contract)
-      x += perm_x
-
-    x /= math.factorial(self.T.type.l)
-
-    # Create a new tensor space here
-    sym_TkTpM = TensorSpace(self.T.p, self.T.type, self.T.TkTpM.manifold)
-    super().__init__(x, TkTpM=sym_TkTpM)
-
-  def call_unvectorized(self, *Xs: List[TangentVector]) -> Coordinate:
-    """Apply the tensor to a list of tangent vectors
-
-    Args:
-      Xs: A list of tangent vectors
-
-    Returns:
-      Value at Xs
-    """
-    out = 0.0
-    for Xs_perm in itertools.permutations(Xs):
-      out += self.T(*Xs_perm)
-
-    k_factorial = math.factorial(len(Xs))
-    out /= k_factorial
-    return out
-
-def symmetrize(T: Tensor):
-  """Symmetrize a tensor.
-
-  Args:
-    T: Tensor to symmetrize
-
-  Returns:
-    Symmetric version of T
-  """
-  return SymmetrizedTensor(T)
-
-def symmetric_product(a: Tensor, b: Tensor):
-  """Symmetric product of 2 tensors
-
-  Args:
-    a: Tensor a
-    b: Tensor b
-
-  Returns:
-    Symmetric product of a and b
-  """
-  if isinstance(a, CotangentVector):
-    a = as_tensor(a)
-  if isinstance(b, CotangentVector):
-    b = as_tensor(b)
-
-  return symmetrize(tensor_product(a, b))
+  # Might need to case cotangent vectors as tensors
+  Ts = [T if isinstance(T, Tensor) else as_tensor(T) for T in Ts]
+  return TensorProductTensor(*Ts)
 
 ################################################################################################################
 
@@ -817,102 +786,25 @@ class TensorField(Section[Point,Tensor], abc.ABC):
 
 ################################################################################################################
 
-class SymmetrizedTensorField(TensorField, abc.ABC):
-  """The symmetrization of a tensor field.  This will have a non symmetric tensor
-  field that we will just symmetrize when calling this tensor.
-
-  Attributes:
-    type: The type of the tensor field
-    M: The manifold that the tensor field is defined on
-  """
-  def __init__(self, tensor_type: TensorType, M: Manifold):
-    """Creates a new tensor field.
-
-    Args:
-      type: The tensor type (k,l)
-      M: The base manifold.
-    """
-    return super().__init__(tensor_type, M)
-
-  @property
-  @abc.abstractmethod
-  def T(self) -> TensorField:
-    """The non-symmetric tensor field that we'll use to construct
-    a symmetric tensor field
-
-    Returns:
-      A tensor field object
-    """
-    pass
-
-  def apply_to_co_vector_fields(self, *Xs: List[Union[VectorField,CovectorField]]) -> Map:
-    """Evaluate the tensor field on (co)vector fields
-
-    Args:
-      Xs: A list of (co)vector fields
-
-    Returns:
-      A map over the manifold
-    """
-    def fun(p: Point):
-      out = 0.0
-      for Xs_perm in itertools.permutations(Xs):
-        out += self.T.apply_to_co_vector_fields(*Xs_perm)
-
-      k_factorial = math.factorial(len(Xs))
-      out /= k_factorial
-      return out
-    return Map(fun, domain=self.manifold, image=Reals())
-
-  def apply_to_point(self, p: Point) -> Tensor:
-    """Evaluate the tensor field at a point.
-
-    Args:
-      p: Point on the manifold.
-
-    Returns:
-      Tensor at p.
-    """
-    Tp = self.T.apply_to_point(p)
-    return symmetrize(Tp)
-
-def symmetrize_tensor_field(T: TensorField):
-  """Symmetrize a tensor field.
-
-  Args:
-    T: Tensor field to symmetrize
-
-  Returns:
-    Symmetric version of T
-  """
-  class SymmetrizedFromInputTensorField(SymmetrizedTensorField):
-    @property
-    def T(self):
-      return T
-  return SymmetrizedFromInputTensorField(T.type, T.manifold)
-
-################################################################################################################
-
 class TensorFieldProduct(TensorField):
-  """A tensor field coming from a tensor product of two tensor fields
+  """A tensor field coming from a tensor product of tensor fields
 
   Attribues:
-    A: Tensor field 1
-    B: Tensor field 2
+    Ts: A list of tensor fields
   """
-  def __init__(self, A: TensorField, B: TensorField):
+  def __init__(self, *Ts: List[TensorField]):
     """Creates a new tensor field from a product of A and B
 
     Args:
-      A: Tensor field 1
-      B: Tensor field 2
+      Ts: A list of tensor fields
     """
-    assert A.manifold == B.manifold
-    self.A = A
-    self.B = B
-    self.type = A.type + B.type
+    self.manifold = Ts[0].manifold
+    assert all(T.manifold == self.manifold for T in Ts)
 
-    super().__init__(self.type, A.manifold)
+    self.Ts = Ts
+    self.type = reduce(lambda x, y: x + y, [T.type for T in self.Ts])
+
+    super().__init__(self.type, self.manifold)
 
   def apply_to_co_vector_fields(self, *Xs: List[Union[VectorField,CovectorField]]) -> Map:
     """Evaluate the tensor field on vector/covector fields
@@ -929,11 +821,19 @@ class TensorFieldProduct(TensorField):
     covector_fields = Xs[:self.type.k]
     vector_fields = Xs[self.type.k:]
 
-    AX = self.A(*covector_fields[:self.A.type.k], *vector_fields[:self.A.type.l])
-    BX = self.B(*covector_fields[self.A.type.k:], *vector_fields[self.A.type.l:])
+    # Apply each of the input fields to the tensor fields
+    start_k, start_l = 0, 0
+    TXs = []
+    for T in self.Ts:
+      end_k = start_k + T.type.k
+      end_l = start_l + T.type.l
+      TX = T(*covector_fields[start_k:end_k], *vector_fields[start_l:end_l])
+      TXs.append(TX)
+
+      start_k, start_l = end_k, end_l
 
     def fun(p: Point):
-      return AX(p)*BX(p)
+      return reduce(lambda x, y: x(p)*y(p), TXs)
 
     return Map(fun, domain=self.manifold, image=Reals())
 
@@ -947,21 +847,18 @@ class TensorFieldProduct(TensorField):
       Tensor at p.
     """
     # If we're evaluating at a point, then we evaluate the tensor product of the tensors
-    Ap = self.A(p)
-    Bp = self.B(p)
-    return TensorProductTensor(Ap, Bp)
+    return TensorProductTensor(*[T(p) for T in self.Ts])
 
-def tensor_field_product(A: TensorField, B: TensorField) -> TensorField:
+def tensor_field_product(*Ts: List[TensorField]) -> TensorField:
   """Tensor product of tensor fields
 
   Args:
-    A: Tensor field 1
-    B: Tensor field 2
+    Ts: A list of tensor fields
 
   Returns:
-    Tensor product of A and B
+    Tensor product of the tensor fields
   """
-  return TensorFieldProduct(A, B)
+  return TensorFieldProduct(*Ts)
 
 ################################################################################################################
 

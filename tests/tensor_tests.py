@@ -5,6 +5,7 @@ import src.util
 import jax
 import jax.numpy as jnp
 import jax.random as random
+import tqdm
 from src.set import *
 from src.map import *
 from src.tangent import *
@@ -27,12 +28,12 @@ def cotangent_tensor_product_test():
   rng_key = random.PRNGKey(0)
 
   # Construct a manifold
-  M = Sphere(dim=4)
+  M = Sphere(dim=3)
   p = random.normal(rng_key, (M.dimension + 1,)); p = p/jnp.linalg.norm(p)
 
   # First build a tensor
   tensor_type = TensorType(3, 3)
-  tensor_coords = random.normal(rng_key, [4]*sum(tensor_type))
+  tensor_coords = random.normal(rng_key, [M.dimension]*sum(tensor_type))
   TkTpM = TensorSpace(p, tensor_type, M)
   T = Tensor(tensor_coords, TkTpM=TkTpM)
 
@@ -44,6 +45,25 @@ def cotangent_tensor_product_test():
   TpM = TangentSpace(p, M)
   vs = [TangentVector(x, TpM) for x in coords[tensor_type.k:]]
   test = T(*ws, *vs)
+
+  # Try getting a basis for this tensor space and make
+  # sure that we can factor the tensor into its basis elements
+  if True:
+    # This test takes a while
+    basis = TkTpM.get_basis()
+    dual_basis = TkTpM.get_dual_basis()
+
+    T_reconstr = None
+    for E, e in tqdm.tqdm(list(zip(basis, dual_basis))):
+      elements = e.decompose()
+      coordinate = T(*elements)
+      term = coordinate*E
+      if T_reconstr is None:
+        T_reconstr = term
+      else:
+        T_reconstr += term
+
+    assert jnp.allclose(T_reconstr.xs[0], T.xs[0])
 
   # Check that we can change coordinates correctly
   # Do this by creating a manifold which uses a different set of charts
@@ -63,7 +83,7 @@ def cotangent_tensor_product_test():
 
       return Atlas(new_charts)
 
-  M2 = SphereCustomChart(dim=4)
+  M2 = SphereCustomChart(dim=M.dimension)
 
   # Create the same tensor as before, but using the
   # new coordinates
@@ -96,39 +116,16 @@ def cotangent_tensor_product_test():
   out2_2 = w1w2w3_2(v1, v2, v3)
   assert jnp.allclose(out2, out2_2)
 
-  # Check symmetrization
-  SymT = symmetrize(w1w2w3)
-  out1 = SymT(v1, v2, v3)
-  out2 = SymT(v1, v3, v2)
-  out3 = SymT(v2, v1, v3)
-  out4 = SymT(v2, v3, v1)
-  out5 = SymT(v3, v1, v2)
-  out6 = SymT(v3, v2, v1)
-  assert jnp.allclose(out1, out2)
-  assert jnp.allclose(out1, out3)
-  assert jnp.allclose(out1, out4)
-  assert jnp.allclose(out1, out5)
-  assert jnp.allclose(out1, out6)
-
-  out1_ = SymT.call_unvectorized(v1, v2, v3)
-  out2_ = SymT.call_unvectorized(v1, v3, v2)
-  out3_ = SymT.call_unvectorized(v2, v1, v3)
-  out4_ = SymT.call_unvectorized(v2, v3, v1)
-  out5_ = SymT.call_unvectorized(v3, v1, v2)
-  out6_ = SymT.call_unvectorized(v3, v2, v1)
-  assert jnp.allclose(out1_, out1)
-  assert jnp.allclose(out2_, out2)
-  assert jnp.allclose(out3_, out3)
-  assert jnp.allclose(out4_, out4)
-  assert jnp.allclose(out5_, out5)
-  assert jnp.allclose(out6_, out6)
+  w1w2w3_3 = tensor_product(w1, w2, w3)
+  out2_3 = w1w2w3_3(v1, v2, v3)
+  assert jnp.allclose(out2, out2_3)
 
   ##################################################
 
   # Next try the tensor product of two tensors
   tensor_type_1, tensor_type_2 = TensorType(1, 2), TensorType(2, 2)
-  tensor_coords_1 = random.normal(rng_key, [4]*sum(tensor_type_1))
-  tensor_coords_2 = random.normal(rng_key, [4]*sum(tensor_type_2))
+  tensor_coords_1 = random.normal(rng_key, [M.dimension]*sum(tensor_type_1))
+  tensor_coords_2 = random.normal(rng_key, [M.dimension]*sum(tensor_type_2))
   TkTpM_1 = TensorSpace(p, tensor_type_1, M)
   TkTpM_2 = TensorSpace(p, tensor_type_2, M)
 
@@ -339,9 +336,8 @@ def tensor_field_tests():
 def run_all():
   jax.config.update("jax_enable_x64", True)
 
-  # cotangent_tensor_product_test()
+  cotangent_tensor_product_test()
   tensor_field_tests()
-
 
 if __name__ == "__main__":
   from debug import *
