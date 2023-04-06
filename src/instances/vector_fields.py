@@ -15,12 +15,14 @@ from src.tensor import *
 from src.vector_field import *
 from src.section import *
 from src.riemannian_metric import *
+from src.differential_form import *
 import src.util as util
 
 __all__ = ["AutonomousVectorField",
            "AutonomousCovectorField",
            "AutonomousTensorField",
            "ParametricRiemannianMetric",
+           "ParametricDifferentialForm",
            "AutonomousFrame",
            "AutonomousCoframe",
            "SimpleTimeDependentVectorField"]
@@ -285,6 +287,24 @@ class ParametricRiemannianMetric(RiemannianMetric):
       A tensor field object
     """
     return self._T
+
+class ParametricDifferentialForm(TensorFieldToDifferentialForm):
+  """A parametric differential form
+
+  Attribues:
+    tf: The function that gives us tensors at points
+    M: Manifold
+  """
+  def __init__(self, tf: Callable[[Coordinate], Coordinate], tensor_type: TensorType, M: Manifold):
+    """Creates a new tensor field.
+
+    Args:
+      tf: Tensor field coordinate function.
+      M: The base manifold.
+    """
+    self.manifold = M
+    T = AutonomousTensorField(tf, tensor_type, self.manifold)
+    super().__init__(T, tensor_type, self.manifold)
 
 ################################################################################################################
 

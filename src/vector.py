@@ -211,6 +211,14 @@ class VectorSpaceBasis():
     assert isinstance(v, self.V.Element)
     self.basis[index] = v
 
+  def __len__(self) -> int:
+    """Get the number of elements in this basis
+
+    Returns:
+      len(self)
+    """
+    return len(self.basis)
+
   def __add__(self, Y: "VectorSpaceBasis") -> "VectorSpaceBasis":
     """Add two tangent space bases.
 

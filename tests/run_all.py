@@ -11,6 +11,7 @@ from tests.cotangent_tests import run_all as run_all_cotangent
 from tests.tensor_tests import run_all as run_all_tensor
 from tests.lie_derivative_tests import run_all as run_all_lie_derivative
 from tests.riemannian_metric_tests import run_all as run_all_riemannian_metric
+from tests.differential_form_tests import run_all as run_all_differential_form
 import src.util as util
 import jax
 
@@ -25,12 +26,12 @@ if __name__ == "__main__":
   run_all_vector_field()
   run_all_lie_algebra()
 
-  util.GLOBAL_CHECK = False
-  run_all_flow()
-  util.GLOBAL_CHECK = True
+  with util.global_check_off():
+    run_all_flow()
 
   run_all_bundle()
   run_all_cotangent()
   run_all_tensor()
   run_all_lie_derivative()
   run_all_riemannian_metric()
+  run_all_differential_form()

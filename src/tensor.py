@@ -27,6 +27,7 @@ __all__ = ["Tensor",
            "TensorProductTensor",
            "TensorProductSpace",
            "tensor_space_product",
+           "as_tensor",
            "tensor_product",
            "as_tensor_field",
            "TensorBundle",
@@ -51,7 +52,6 @@ class Tensor(MultlinearMap[List[Union[CotangentVector,TangentVector]],Coordinate
       xs: A list of independent coordinates to make tensor
       TkTpM: The tangent space that the tensor lives on.
     """
-    # assert x.ndim == TkTpM.coordinate_dim
     self.xs = x
     self.TkTpM = TkTpM
     self.manifold = self.TkTpM.manifold
@@ -61,6 +61,10 @@ class Tensor(MultlinearMap[List[Union[CotangentVector,TangentVector]],Coordinate
     self.type = self.TkTpM.type
 
     self.contract = self.TkTpM.get_coordinate_indices()
+
+  def to_tensor(self):
+    x = self.get_dense_coordinates()
+    return Tensor(x, TensorSpace(self.p, self.type, self.manifold))
 
   def get_dense_coordinates(self) -> Coordinate:
     """Get the dense representation of the coordinates
@@ -246,20 +250,32 @@ class TensorSpace(VectorSpace):
     self.type = tensor_type
     self.manifold = M
 
-    # Need to keep track of the shape of our coordinates
-    self.coordinate_dim = self.type.k + self.type.l
-    self.dimension = self.manifold.dimension**(self.coordinate_dim)
+    self.dimension = self.manifold.dimension**(self.type.k + self.type.l)
 
     # Keep track of the chart function for the manifold
     self.phi = self.manifold.get_chart_for_point(self.p)
 
     super().__init__(dimension=self.dimension)
 
-    # These are the letters that we'll use in our einsum
-    # corresponding to the number of dimensions each covariant
-    # and contravariant index
-    self.k_names = [f"k{k}" for k in range(self.type.k)]
-    self.l_names = [f"l{l}" for l in range(self.type.l)]
+  @property
+  def k_names(self) -> List[str]:
+    """Get the indices for the coordinates that we'll plug into
+    einsum when evaluating the tensor.
+
+    Returns:
+      If this has 3 contravariant indices, then returns "k0 k1 k2"
+    """
+    return [f"k{k}" for k in range(self.type.k)]
+
+  @property
+  def l_names(self) -> List[str]:
+    """Get the indices for the coordinates that we'll plug into
+    einsum when evaluating the tensor.
+
+    Returns:
+      If this has 3 covariant indices, then returns "l0 l1 l2"
+    """
+    return [f"l{l}" for l in range(self.type.l)]
 
   def get_coordinate_indices(self) -> str:
     """Get the indices for the coordinates that we'll plug into
@@ -308,7 +324,7 @@ class TensorSpace(VectorSpace):
     """Get a basis of vectors for this tensor space
 
     Args:
-      dual: Get the dual basis?
+      dual: Get the dual basis
 
     Returns:
       A list of tensors that form a basis for the tensor space
@@ -587,8 +603,7 @@ class TensorBundle(FiberBundle):
     # The fiber of a tensor bundle is a tensor
     self.manifold = M
     self.type = tensor_type
-    self.coordinate_dim = self.type.k + self.type.l
-    self.dimension = self.manifold.dimension**(self.coordinate_dim)
+    self.dimension = self.manifold.dimension**(self.type.k + self.type.l)
     super().__init__(M, EuclideanManifold(dimension=self.dimension))
 
   def __contains__(self, x: Tensor) -> bool:
