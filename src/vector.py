@@ -34,7 +34,12 @@ class Vector(Generic[Point]):
     assert x.ndim == 1
     self.x = x
     self.V = V
-    assert x.shape[0] == self.V.dimension
+
+    # # Don't think we need this?  If we have a fiber bundle, then
+    # # the dimension is defined as that of the fiber, so we'll
+    # # have a mismatch between the number of coordinates for a point
+    # # on a bundle and the dimension of the bundle.
+    # assert x.shape[0] == self.V.dimension
 
   def __add__(self, Y: "Vector") -> "Vector":
     """Add two vectors together

@@ -22,31 +22,34 @@ from src.instances.vector_fields import AutonomousVectorField, AutonomousCovecto
 
 ################################################################################################################
 
-def get_chart_fun(dimension, rng_key):
+def get_chart_fun(dimension, rng_key, linear=False):
 
-  # Just use an linear transformation to change coordinates.  Using a flow introduces numerical instabilities.
+  if linear:
+    # Just use an linear transformation to change coordinates.  Using a flow introduces numerical instabilities.
+    def apply_fun(x, inverse=False):
+      A = random.normal(rng_key, (dimension, dimension))
+      if inverse == False:
+        return A@x
+      return jnp.linalg.inv(A)@x
+    return apply_fun
+
+  # Construct the vector field over M
+  import nux
+  flow = nux.GLOW(n_layers=3,
+           working_dim=2,
+           hidden_dim=4,
+           n_resnet_layers=1)
+
+  # flow = nux.Sequential([nux.DenseMVP(), nux.SneakyReLU(alpha=0.5), nux.DenseMVP()])
+
+  x = random.normal(rng_key, (100, dimension))
+  flow(x, rng_key=rng_key)
+  params = flow.get_params()
+
   def apply_fun(x, inverse=False):
-    A = random.normal(rng_key, (dimension, dimension))
-    if inverse == False:
-      return A@x
-    return jnp.linalg.inv(A)@x
+    return flow(x[None], params=params, rng_key=rng_key, inverse=inverse)[0][0]
+
   return apply_fun
-
-  # # Construct the vector field over M
-  # import nux
-  # flow = nux.GLOW(n_layers=3,
-  #          working_dim=4,
-  #          hidden_dim=8,
-  #          n_resnet_layers=1)
-
-  # x = random.normal(rng_key, (100, dimension))
-  # flow(x, rng_key=rng_key)
-  # params = flow.get_params()
-
-  # def apply_fun(x, inverse=False):
-  #   return flow(x[None], params=params, rng_key=rng_key, inverse=inverse)[0][0]
-
-  # return apply_fun
 
 ################################################################################################################
 

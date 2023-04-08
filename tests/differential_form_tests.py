@@ -23,12 +23,13 @@ import nux
 import src.util as util
 from tests.vector_field_tests import get_vector_field_fun
 from tests.tensor_tests import get_tensor_field_fun
+from tests.cotangent_tests import get_chart_fun
 
-def get_inputs():
+def get_inputs(dimension=5):
   rng_key = random.PRNGKey(0)
 
   # Construct a manifold
-  M = Sphere(dim=5)
+  M = Sphere(dim=dimension)
   p = random.normal(rng_key, (M.dimension + 1,)); p = p/jnp.linalg.norm(p)
 
   # Evaluate it on some cotangent and tangent vectors
@@ -435,6 +436,195 @@ def example_14p18():
 
 ################################################################################################################
 
+def exterior_derivative_test():
+  rng_key, M, p, T, T2, v1, v2, v3, v4, v5 = get_inputs(dimension=3)
+  k1, k2 = random.split(rng_key, 2)
+
+  # Create a differential form
+  tensor_type = TensorType(0, 1)
+  tf = get_tensor_field_fun(M, tensor_type, k1)
+  w = ParametricDifferentialForm(tf, tensor_type, M)
+
+  tensor_type = TensorType(0, 2)
+  tf = get_tensor_field_fun(M, tensor_type, k2)
+  n = ParametricDifferentialForm(tf, tensor_type, M)
+
+  # Create some vector fields to evaluate it at
+  k1, k2, k3, k4, k5 = random.split(rng_key, 5)
+  X = AutonomousVectorField(get_vector_field_fun(M.dimension, k1), M)
+  Y = AutonomousVectorField(get_vector_field_fun(M.dimension, k2), M)
+  Z = AutonomousVectorField(get_vector_field_fun(M.dimension, k3), M)
+  U = AutonomousVectorField(get_vector_field_fun(M.dimension, k4), M)
+
+  # Try making a 0 tensor and using it
+  wX = interior_product_form(w, X)
+  check = FunctionDifferential(wX)
+
+  test = exterior_derivative(wX)
+  out1 = test(Y)
+
+  # Compute the exterior derivative of w
+  dw = exterior_derivative(w)
+  dn = exterior_derivative(n)
+
+  # Proposition 14.23: Properties of the exterior derivative
+  # a)
+  c = 0.3
+  test1 = exterior_derivative(c*w)
+  test2 = c*exterior_derivative(w)
+  out1 = test1(X, Y)(p)
+  out2 = test2(X, Y)(p)
+  assert jnp.allclose(out1, out2)
+
+  # b)
+  test1 = exterior_derivative(wedge_product_form(w, n))
+  test2 = wedge_product_form(dw, n) + (-1.0)**w.type.l*wedge_product_form(w, dn)
+  out1 = test1(X, Y, Z, U)(p)
+  out2 = test2(X, Y, Z, U)(p)
+  assert jnp.allclose(out1, out2)
+
+  # c)
+  ddw = exterior_derivative(exterior_derivative(w))
+  out = ddw(X, Y, Z)(p)
+  assert jnp.allclose(out, 0.0)
+
+  # d)
+  A = random.normal(rng_key, (M.dimension + 1, M.dimension + 1))
+  Q, _ = jnp.linalg.qr(A)
+  def _F(x, inverse=False):
+    if inverse == False:
+      return Q@x
+    return Q.T@x
+  F = Diffeomorphism(_F, domain=M, image=M)
+
+  dF_star_w = exterior_derivative(pullback_differential_form(F, w))
+  F_star_dw = pullback_differential_form(F, exterior_derivative(w))
+
+  out1 = dF_star_w(X, Y)(p)
+  out2 = F_star_dw(X, Y)(p)
+
+  assert jnp.allclose(out1, out2)
+
+  # Proposition 14.29
+  assert w.type.l == 1 # 1 form
+  test1 = dw(X, Y)
+  test2 = X(w(Y)) - Y(w(X)) - w(lie_bracket(X, Y))
+  out1 = test1(p)
+  out2 = test2(p)
+
+  assert jnp.allclose(out1, out2)
+
+  # Propostion 14.32
+  Xs = [X, Y, Z]
+  test1 = dn(*Xs)
+
+  test2 = None
+  for i in range(dn.type.l):
+    X_no_i = [x for _i, x in enumerate(Xs) if _i != i]
+    X_i = Xs[i]
+    term = (-1.0)**(i)*X_i(n(*X_no_i))
+
+    if i == 0:
+      test2 = term
+    else:
+      test2 += term
+
+    for j in range(i + 1, dn.type.l):
+      X_no_ij = [x for _i, x in enumerate(Xs) if (_i != i) and (_i != j)]
+      X_j = Xs[j]
+      term = (-1.0)**(i + j)*n(lie_bracket(X_i, X_j), *X_no_ij)
+      test2 += term
+
+  out1 = test1(p)
+  out2 = test2(p)
+
+  assert jnp.allclose(out1, out2)
+
+################################################################################################################
+
+def structure_coefficient_tests():
+  rng_key, M, p, T, T2, v1, v2, v3, v4, v5 = get_inputs(dimension=3)
+  k1, k2 = random.split(rng_key, 2)
+
+  # Proposition 14.30
+  frame = AutonomousFrame(get_chart_fun(M.dimension, k1), M)
+  basis_vector_fields = frame.to_vector_field_list()
+  basis_covector_fields = frame.get_dual_coframe().to_covector_field_list()
+
+  # Get the structure coefficients
+  c_matrix = jnp.zeros([M.dimension]*3)
+  for j, Ej in enumerate(basis_vector_fields):
+    for k, Ek in enumerate(basis_vector_fields):
+      if j >= k:
+        continue
+      Ej_Ek = lie_bracket(Ej, Ek)
+
+      # Get the coordinate functions corresponding to each basis vector
+      for i, ei in enumerate(basis_covector_fields):
+        cijk = ei(Ej_Ek)
+        c_matrix = c_matrix.at[i,j,k].set(cijk(p))
+
+  # Compare against the coordinate functions for dw
+  b_matrix = jnp.zeros([M.dimension]*3)
+  for i, ei in enumerate(basis_covector_fields):
+    dei = exterior_derivative(ei)
+
+    # Get the coordinate functions for each basis vector
+    for j, Ej in enumerate(basis_vector_fields):
+      for k, Ek in enumerate(basis_vector_fields):
+        if j >= k:
+          continue
+
+        bijk = dei(Ej, Ek)
+        b_matrix = b_matrix.at[i,j,k].set(bijk(p))
+
+  assert jnp.allclose(b_matrix, -c_matrix)
+
+################################################################################################################
+
+def lie_derivative_tests():
+  rng_key, M, p, T, T2, v1, v2, v3, v4, v5 = get_inputs(dimension=3)
+  k1, k2 = random.split(rng_key, 2)
+
+  # Create a differential form
+  tensor_type = TensorType(0, 1)
+  tf = get_tensor_field_fun(M, tensor_type, k1)
+  w = ParametricDifferentialForm(tf, tensor_type, M)
+
+  tensor_type = TensorType(0, 2)
+  tf = get_tensor_field_fun(M, tensor_type, k2)
+  n = ParametricDifferentialForm(tf, tensor_type, M)
+
+  # Create some vector fields to evaluate it at
+  k1, k2, k3, k4, k5 = random.split(rng_key, 5)
+  X = AutonomousVectorField(get_vector_field_fun(M.dimension, k1), M)
+  Y = AutonomousVectorField(get_vector_field_fun(M.dimension, k2), M)
+  Z = AutonomousVectorField(get_vector_field_fun(M.dimension, k3), M)
+  V = AutonomousVectorField(get_vector_field_fun(M.dimension, k4), M)
+
+  # Cartans magic formula
+  test1 = lie_derivative(V, n)
+  test2 = interior_product_form(exterior_derivative(n), V) + exterior_derivative(interior_product_form(n, V))
+  out1 = test1(X, Y)(p)
+  out2 = test2(X, Y)(p)
+  assert jnp.allclose(out1, out2)
+
+  # Proposition 14.33
+  test1 = lie_derivative(V, wedge_product_form(w, n))
+  test2 = wedge_product_form(lie_derivative(V, w), n) + wedge_product_form(w, lie_derivative(V, n))
+  out1 = test1(X, Y, Z)(p)
+  out2 = test2(X, Y, Z)(p)
+  assert jnp.allclose(out1, out2)
+
+  # Corollary 14.36
+  test1 = lie_derivative(V, exterior_derivative(n))
+  test2 = exterior_derivative(lie_derivative(V, n))
+  out1 = test1(X, Y, Z)(p)
+  out2 = test2(X, Y, Z)(p)
+  assert jnp.allclose(out1, out2)
+
+################################################################################################################
+
 def run_all():
   jax.config.update("jax_enable_x64", True)
 
@@ -445,6 +635,9 @@ def run_all():
   interior_product_tests()
   differential_form_tests()
   example_14p18()
+  exterior_derivative_test()
+  structure_coefficient_tests()
+  lie_derivative_tests()
 
 if __name__ == "__main__":
   from debug import *

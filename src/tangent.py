@@ -15,7 +15,9 @@ __all__ = ["TangentVector",
            "TangentSpace",
            "TangentBasis",
            "VectorField",
+           "CoordinateVectorField",
            "Frame",
+           "StandardCoordinateFrame",
            "Differential"]
 
 class TangentVector(Vector):
@@ -44,8 +46,6 @@ class TangentVector(Vector):
     # Also keep track of the point that the tangent space is defined on
     # and its coordinates
     self.p = self.TpM.p
-
-    # self.p_hat = self.phi(self.p)
 
   @property
   def p_hat(self):
@@ -157,7 +157,6 @@ class VectorField(Section[Point,TangentVector], abc.ABC):
   in order to use.
 
   Attributes:
-    X: Function that assigns a tangent vector to every point on the manifold
     M: The manifold that the vector field is defined on
   """
   def __init__(self, M: Manifold):
@@ -183,14 +182,13 @@ class VectorField(Section[Point,TangentVector], abc.ABC):
       f: A map from the manifold to R
 
     Returns:
-      fX
+      Xf
     """
     from src.instances.manifolds import EuclideanManifold
     assert isinstance(f, Map)
     def fun(p: Point):
       return self(p)(f)
     return Map(fun, domain=self.manifold, image=EuclideanManifold(dimension=1))
-    # return Map(fun, domain=self.manifold, image=Reals())
 
   @abc.abstractmethod
   def apply_to_point(self, p: Point) -> TangentVector:
@@ -220,6 +218,58 @@ class VectorField(Section[Point,TangentVector], abc.ABC):
         assert x in self.manifold
       return self.apply_to_point(x)
 
+  def get_coordinate_functions_with_basis(self) -> List[Tuple[Map[Manifold,Coordinate],"CoordinateVectorField"]]:
+    """Get the coordinate functions associated with basis elements
+
+    Returns:
+      A list of coordinate functions
+    """
+    # Get the coordinate (co)frame over the manifold
+    coordinate_frame = StandardCoordinateFrame(self.manifold)
+    basis_vector_fields = coordinate_frame.to_vector_field_list()
+
+    dual_frame = coordinate_frame.get_dual_coframe()
+    basis_covector_fields = dual_frame.to_covector_field_list()
+
+    out = []
+    for e, E in zip(basis_covector_fields, basis_vector_fields):
+      # Get the coordinate function
+      c = e(self)
+      out.append((c, E))
+
+    return out
+
+class CoordinateVectorField(VectorField):
+  """d/dx^i
+
+  Attributes:
+    i: The coordinate index
+    M: The manifold that the vector field is defined on
+  """
+  def __init__(self, i: int, M: Manifold):
+    """Create a coordinate vector field
+
+    Attributes:
+      i: The coordinate index
+      M: The manifold that the vector field is defined on
+    """
+    self.i = i
+    super().__init__(M)
+
+  def apply_to_point(self, p: Point) -> TangentVector:
+    """Evaluate the vector field at a point.
+
+    Args:
+      p: Point on the manifold.
+
+    Returns:
+      Tangent vector at p.
+    """
+    TpM = TangentSpace(p, self.manifold)
+    coords = jnp.zeros(self.manifold.dimension)
+    coords = coords.at[self.i].set(1)
+    return TangentVector(coords, TpM=TpM)
+
 ################################################################################################################
 
 class TangentBasis(VectorSpaceBasis):
@@ -238,15 +288,6 @@ class TangentBasis(VectorSpaceBasis):
     """
     super().__init__(basis_vectors, TpM)
     self.TpM = TpM
-
-  def get_dual_basis(self) -> "DualBasis":
-    """Get the corresponding dual basis.
-
-    Returns:
-      Corresponding cotangent basis
-    """
-    # Rows of the inverse matrix of coordinates
-    pass
 
 ################################################################################################################
 
@@ -284,6 +325,73 @@ class Frame(Section[Point,TangentBasis], abc.ABC):
       Tangent vector at p.
     """
     pass
+
+  def get_dual_coframe(self) -> "Coframe":
+    """Return the coframe associated with this frame
+
+    Returns:
+      Dual coframe
+    """
+    from src.cotangent import Coframe, CotangentBasis
+    class DualCoframe(Coframe):
+      def __init__(self, frame):
+        self.frame = frame
+        super().__init__(frame.manifold)
+        self.frame_lt_map = self.frame.frame_bundle.get_local_trivialization_map(None)
+        self.coframe_lt_map = self.coframe_bundle.get_local_trivialization_map(None)
+
+      def apply_to_point(self, p: Input) -> CotangentBasis:
+        # Get the frame at p
+        Ep = self.frame.apply_to_point(p)
+
+        # Apply a local trivialization to get to coordinates
+        p, Ep_matrix = self.frame_lt_map(Ep)
+
+        # Get the coframe coordinates
+        ep_matrix = jnp.linalg.inv(Ep_matrix)
+
+        # Go back through the coframe local trivialization
+        return self.coframe_lt_map.inverse((p, ep_matrix))
+
+    return DualCoframe(self)
+
+  def to_vector_field_list(self) -> List[VectorField]:
+    """Turn the frame into a list of vector fields
+
+    Returns:
+      List of vector fields
+    """
+    class FrameElementVectorField(VectorField):
+      def __init__(self, i, frame):
+        self.i = i
+        self.frame = frame
+        super().__init__(frame.manifold)
+
+      def apply_to_point(self, p: Point) -> TangentVector:
+        vector_list = self.frame(p)
+        return vector_list[self.i]
+
+    return [FrameElementVectorField(i, self) for i in range(self.manifold.dimension)]
+
+class StandardCoordinateFrame(Frame):
+  """The standard coordinate frame.  The frame at each point
+  is a set of tangent vectors that span the tangent space.
+
+  Attributes:
+    M: Manifold
+  """
+  def apply_to_point(self, p: Point) -> TangentBasis:
+    """Evaluate the vector field at a point.
+
+    Args:
+      p: Point on the manifold.
+
+    Returns:
+      Tangent vector at p.
+    """
+    lt_map = self.frame_bundle.get_local_trivialization_map(p)
+    eye = jnp.eye(self.domain.dimension)
+    return lt_map.inverse((p, eye))
 
 ################################################################################################################
 

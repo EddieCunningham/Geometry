@@ -39,7 +39,10 @@ __all__ = ["Permutation",
            "WedgeProductForm",
            "wedge_product_form",
            "InteriorProductForm",
-           "interior_product_form"]
+           "interior_product_form",
+           "exterior_derivative",
+           "PullbackDifferentialForm",
+           "pullback_differential_form"]
 
 ################################################################################################################
 
@@ -253,6 +256,8 @@ class AlternatingTensor(Tensor):
       Xp + Yp
     """
     # Must be the same type
+    if isinstance(Y, CotangentVector):
+      Y = as_tensor(Y)
     assert isinstance(Y, AlternatingTensor)
     assert self.type == Y.type
     x_coords = self.get_dense_coordinates()
@@ -427,7 +432,7 @@ class AlternatingTensorSpace(TensorSpace):
 
     # Basis elements have indices of increasing value
     import scipy
-    self.dimension = scipy.special.comb(self.manifold.dimension, self.type.k, exact=True)
+    self.dimension = scipy.special.comb(self.manifold.dimension, self.type.l, exact=True)
 
     # Keep track of the chart function for the manifold
     self.phi = self.manifold.get_chart_for_point(self.p)
@@ -599,6 +604,9 @@ def interior_product(w: AlternatingTensor, v: TangentVector):
   Returns:
     The interior product i_v(w)
   """
+  if w.type.l == 1:
+    # Return a point
+    return w(v)
   return InteriorProductAlternatingTensor(w, v)
 
 ################################################################################################################
@@ -624,7 +632,7 @@ class AlternatingTensorBundle(TensorBundle):
     self.manifold = M
     self.type = tensor_type
     import scipy
-    self.dimension = scipy.special.comb(self.manifold.dimension, self.type.k, exact=True)
+    self.dimension = scipy.special.comb(self.manifold.dimension, self.type.l, exact=True)
     FiberBundle.__init__(self, M, EuclideanManifold(dimension=self.dimension))
 
   def __contains__(self, x: Tensor) -> bool:
@@ -747,6 +755,45 @@ class DifferentialForm(TensorField, abc.ABC):
       Tensor at p.
     """
     pass
+
+  def get_coordinate_functions_with_basis(self) -> List[Tuple[Map[Manifold,Coordinate],"ElementaryDifferentialForm"]]:
+    """Get the coordinate functions associated with basis elements
+
+    Returns:
+      A list of coordinate functions
+    """
+    assert self.manifold.dimension >= self.type.l
+
+    # Get the coordinate frame over the manifold
+    coordinate_frame = StandardCoordinateFrame(self.manifold)
+    basis_vector_fields = coordinate_frame.to_vector_field_list()
+
+    dual_frame = coordinate_frame.get_dual_coframe()
+    basis_covector_fields = dual_frame.to_covector_field_list()
+
+    out = []
+
+    cf = coordinate_frame
+    a = basis_vector_fields
+
+    df = dual_frame
+    b = basis_covector_fields
+
+    # The only unique values come from unique combinations of basis vectors
+    for iterate in itertools.combinations(enumerate(zip(basis_vector_fields, basis_covector_fields)), self.type.l):
+      index, Ee = zip(*iterate)
+      E, e = zip(*Ee)
+
+      # Get the coordinate
+      wI = self(*E)
+
+      # Get the corresponding basis element
+      eI = wedge_product_form(*e)
+      eI.I = MultiIndex(index) # TODO: MAKE BASIS FIELD
+      out.append((wI, eI))
+
+    assert len(out) > 0
+    return out
 
 ################################################################################################################
 
@@ -896,6 +943,84 @@ def interior_product_form(w: DifferentialForm, X: VectorField) -> DifferentialFo
   Returns:
     InteriorProductForm
   """
+  if w.type.l == 1:
+    # Return a function
+    return w(X)
   return InteriorProductForm(w, X)
+
+################################################################################################################
+
+def exterior_derivative(w: DifferentialForm) -> DifferentialForm:
+  """Compute the exterior derivative of a differential form.
+
+  Args:
+    w: The differential form
+
+  Returns:
+    dw
+  """
+  if (isinstance(w, CovectorField) == False) and (isinstance(w, DifferentialForm) == False):
+    # Exterior derivative is same as exterior derivative for 0 tensors (functions)
+    assert isinstance(w, Map)
+    return FunctionDifferential(w)
+
+  coords_and_basis = w.get_coordinate_functions_with_basis()
+  wI, eI = zip(*coords_and_basis)
+  dwI = [FunctionDifferential(_wI) for _wI in wI]
+  dw = None
+  for i, (_dWI, _eI) in enumerate(zip(dwI, eI)):
+    term = wedge_product_form(_dWI, _eI)
+    dw = term if i == 0 else dw + term
+
+  assert isinstance(dw, DifferentialForm)
+  return dw
+
+################################################################################################################
+
+class PullbackDifferentialForm(DifferentialForm):
+  """The pullback of a DifferentialForm field w through a map F
+
+  Attributes:
+    F: Map
+    T: Tensor field
+  """
+  def __init__(self, F: Map, T: DifferentialForm):
+    """Create a new pullback covariant tensor field
+
+    Args:
+      F: Map
+      T: Tensor field
+    """
+    # T must be a covariant tensor field
+    assert T.manifold == F.image
+    assert T.type.k == 0
+    self.T = T
+    self.F = F
+    super().__init__(tensor_type=T.type, M=F.domain)
+
+  def apply_to_point(self, p: Point) -> Tensor:
+    """Evaluate the tensor field at a point.
+
+    Args:
+      p: Point on the manifold.
+
+    Returns:
+      Tensor at p.
+    """
+    Tp = self.T(self.F(p))
+    dFp_ = self.F.get_tensor_pullback(p, self.T.type)
+    return dFp_(Tp)
+
+def pullback_differential_form(F: Map, T: DifferentialForm) -> PullbackDifferentialForm:
+  """The pullback of T by F.  F^*(T)
+
+  Args:
+    F: A map
+    T: A covariant tensor field on defined on the image of F
+
+  Returns:
+    F^*(T)
+  """
+  return PullbackDifferentialForm(F, T)
 
 ################################################################################################################

@@ -18,6 +18,7 @@ from src.bundle import *
 from src.instances.manifolds import *
 from src.instances.lie_groups import *
 import src.util as util
+from tests.cotangent_tests import get_chart_fun
 
 ################################################################################################################
 
@@ -56,7 +57,7 @@ def tangent_bundle_tests():
   dpi = pi.get_differential(v)
 
   # Apply it to a tangent vector of the local trivialization
-  local_trivialization_tangent_coords = random.normal(rng_key, (2*20,))
+  local_trivialization_tangent_coords = random.normal(rng_key, (40,))
 
   TxE = TangentSpace(v, TM)
   vx = TangentVector(local_trivialization_tangent_coords, TxE)
@@ -182,7 +183,7 @@ def frame_bundle_tests():
   k1, k2 = random.split(rng_key, 2)
 
   # Construct vector fields so that they output the correct shapes
-  s1 = AutonomousFrame(get_vector_field_fun(M.dimension, k1), M)
+  s1 = AutonomousFrame(get_chart_fun(M.dimension, k1), M)
   s2 = AutonomousFrame(get_vector_field_fun(M.dimension, k2), M)
 
   def F_tilde(s):
@@ -205,6 +206,30 @@ def frame_bundle_tests():
 
   # Check that they're all the same
   assert sum([not jnp.allclose(a.x, b.x) for a, b in zip(out1.basis, out2.basis)]) == 0
+
+  # Check that we can split the frame bundle into a list of vector fields
+  elements = s1.to_vector_field_list()
+
+  s1p = s1(p)
+  for i, Xp in enumerate(s1p):
+    Yp = elements[i](p)
+    assert jnp.allclose(Xp.x, Yp.x)
+
+  # Check that we can get the corresponding dual coframes to frames
+  s1_dual = s1.get_dual_coframe()
+  s1_dualp = s1_dual(p)
+
+  # Check that the covectors and vectors are compatable
+  for i, Ep in enumerate(s1p):
+    for j, ep in enumerate(s1_dualp):
+      out = ep(Ep)
+      assert jnp.allclose(out, i==j)
+
+  s1_reconstr = s1_dual.get_dual_frame()
+  s1p_reconstr = s1_reconstr(p)
+  for i, (Xp, Yp) in enumerate(zip(s1p, s1p_reconstr)):
+    assert jnp.allclose(Xp.x, Yp.x)
+
 
 def run_all():
   tangent_bundle_tests()

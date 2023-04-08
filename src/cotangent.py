@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable, List, Optional, Union
+from typing import Callable, List, Optional, Union, Tuple
 import src.util
 from functools import partial
 import jax
@@ -123,7 +123,7 @@ class CotangentSpace(VectorSpace):
     """
     point_same = True
     if util.GLOBAL_CHECK:
-      point_same = jnp.allclose(self.p, other.p)
+      point_same = jax.tree_util.tree_all(jax.tree_util.tree_map(jnp.allclose, self.p, other.p))
     return point_same and (self.manifold == other.manifold)
 
   def __contains__(self, v: CotangentVector) -> bool:
@@ -294,6 +294,27 @@ class CovectorField(Section[Point,CotangentVector], abc.ABC):
       if util.GLOBAL_CHECK:
         assert x in self.manifold
       return self.apply_to_point(x)
+
+  def get_coordinate_functions_with_basis(self) -> List[Tuple[Map[Manifold,Coordinate],"CovectorField"]]:
+    """Get the coordinate functions associated with basis elements
+
+    Returns:
+      A list of coordinate functions
+    """
+    # Get the coordinate (co)frame over the manifold
+    coordinate_frame = StandardCoordinateFrame(self.manifold)
+    basis_vector_fields = coordinate_frame.to_vector_field_list()
+
+    dual_frame = coordinate_frame.get_dual_coframe()
+    basis_covector_fields = dual_frame.to_covector_field_list()
+
+    out = []
+    for e, E in zip(basis_covector_fields, basis_vector_fields):
+      # Get the coordinate function
+      c = self(E)
+      out.append((c, e))
+
+    return out
 
 ################################################################################################################
 
@@ -468,8 +489,8 @@ class Coframe(Section[Point,CotangentBasis], abc.ABC):
     self.manifold = M
 
     domain = M
-    from src.bundle import FrameBundle
-    self.coframe_bundle = CoFrameBundle(M)
+    from src.bundle import CoframeBundle
+    self.coframe_bundle = CoframeBundle(M)
     pi = ProjectionMap(idx=0, domain=self.coframe_bundle, image=domain)
     super().__init__(pi)
 
@@ -484,3 +505,49 @@ class Coframe(Section[Point,CotangentBasis], abc.ABC):
       Cotangent basis at p
     """
     pass
+
+  def get_dual_frame(self) -> "Frame":
+    """Return the coframe associated with this frame
+
+    Returns:
+      Dual coframe
+    """
+    class DualFrame(Frame):
+      def __init__(self, coframe):
+        self.coframe = coframe
+        super().__init__(coframe.manifold)
+        self.frame_lt_map = self.frame_bundle.get_local_trivialization_map(None)
+        self.coframe_lt_map = self.coframe.coframe_bundle.get_local_trivialization_map(None)
+
+      def apply_to_point(self, p: Input) -> TangentBasis:
+        # Get the frame at p
+        ep = self.coframe.apply_to_point(p)
+
+        # Apply a local trivialization to get to coordinates
+        p, ep_matrix = self.coframe_lt_map(ep)
+
+        # Get the coframe coordinates
+        Ep_matrix = jnp.linalg.inv(ep_matrix)
+
+        # Go back through the coframe local trivialization
+        return self.frame_lt_map.inverse((p, Ep_matrix))
+
+    return DualFrame(self)
+
+  def to_covector_field_list(self) -> List[CovectorField]:
+    """Turn the frame into a list of covector fields
+
+    Returns:
+      List of vector fields
+    """
+    class FrameElementCoectorField(CovectorField):
+      def __init__(self, i, coframe):
+        self.i = i
+        self.coframe = coframe
+        super().__init__(coframe.manifold)
+
+      def apply_to_point(self, p: Point) -> CotangentVector:
+        covector_list = self.coframe(p)
+        return covector_list[self.i]
+
+    return [FrameElementCoectorField(i, self) for i in range(self.manifold.dimension)]

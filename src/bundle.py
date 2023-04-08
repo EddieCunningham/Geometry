@@ -52,8 +52,8 @@ class FiberBundle(abc.ABC):
     self.fiber = F
     self.manifold = M
 
-    # DIMENSION OF TOTAL SPACE, NOT THE BUNDLE!
-    self.dimension = F.dimension + M.dimension
+    # Dimension of the bundle is the dimension of the fiber
+    self.dimension = F.dimension
 
   @abc.abstractmethod
   def get_projection_map(self) -> Map[Element,Point]:
@@ -469,7 +469,7 @@ class CoframeBundle(FiberBundle, abc.ABC):
     def Phi(inpt, inverse=False):
       if inverse == False:
         cotangent_basis = inpt
-        p = cotangent_basis.TpM.p
+        p = cotangent_basis.coTpM.p
         mat = jnp.stack([v.x for v in cotangent_basis.basis], axis=0)
         return p, mat
       else:

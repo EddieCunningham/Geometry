@@ -13,6 +13,7 @@ from src.cotangent import *
 from src.vector import *
 from src.section import *
 from src.tensor import *
+from src.differential_form import *
 import src.util as util
 import einops
 import itertools
@@ -151,6 +152,10 @@ def lie_derivative(V: VectorField, x: Union[Map,VectorField,TensorField]) -> Uni
   """
   if isinstance(x, VectorField):
     return lie_bracket(V, x)
+
+  elif isinstance(x, DifferentialForm):
+    # Use Cartan's formula
+    return interior_product_form(exterior_derivative(x), V) + exterior_derivative(interior_product_form(x, V))
 
   elif isinstance(x, TensorField) or isinstance(x, CovectorField):
     # Only implementing covariant tensor field lie derivatives

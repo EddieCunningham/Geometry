@@ -155,6 +155,18 @@ def run_all():
   lhs = lie_bracket(pushforward(F, X), pushforward(F, Y))(p)(f)
   assert jnp.allclose(lhs, rhs)
 
+  # Check that we can compute the coordinate functions of vector fields
+  decomposition = X.get_coordinate_functions_with_basis()
+  check = None
+  for i, (ci, Ei) in enumerate(decomposition):
+    term = ci*Ei
+    check = term if i == 0 else check + term
+
+  coords1 = X(p).x
+  coords2 = check(p).x
+  assert jnp.allclose(coords1, coords2)
+
+
 if __name__ == "__main__":
   from debug import *
   jax.config.update("jax_enable_x64", True)

@@ -561,14 +561,19 @@ def as_tensor(T: Union[CotangentVector,TangentVector]):
     A tensor that is equivalent to T
   """
   if isinstance(T, CotangentVector):
-    space = TensorSpace(T.coTpM.p, TensorType(0, 1), T.coTpM.manifold)
+    from src.differential_form import AlternatingTensorSpace, AlternatingTensor
+    space = AlternatingTensorSpace(T.coTpM.p, TensorType(0, 1), T.coTpM.manifold)
+    return AlternatingTensor(T.x, TkTpM=space)
+
   elif isinstance(T, TangentVector):
     space = TensorSpace(T.TpM.p, TensorType(1, 0), T.TpM.manifold)
+    return Tensor(T.x, TkTpM=space)
+
   elif isinstance(T, Tensor):
     return T
+
   else:
     assert 0, "Invalid input"
-  return Tensor(T.x, TkTpM=space)
 
 def tensor_product(*Ts: List[Tensor]) -> Tensor:
   """Tensor product
@@ -768,15 +773,17 @@ class TensorField(Section[Point,Tensor], abc.ABC):
       Xp + Yp
     """
     # Must be the same type
-    assert isinstance(Y, TensorField)
+    assert isinstance(Y, TensorField) or isinstance(Y, FunctionDifferential)
     assert Y.type == self.type
 
-    class SumOfTensorFields(TensorField):
-      def __init__(self, A: TensorField, B: TensorField):
+    # class SumOfTensorFields(TensorField):
+    class SumOfTensorFields(type(self)):
+      def __init__(self, A: TensorField, B: TensorField, pi):
         self.A = A
         self.B = B
         self.type = A.type
-        super().__init__(self.type, A.manifold)
+        Section.__init__(self, pi)
+        # super().__init__(self.type, A.manifold)
 
       def apply_to_co_vector_fields(self, *Xs: List[Union[VectorField,CovectorField]]) -> Map:
         return self.A(*Xs) + self.B(*Xs)
@@ -786,7 +793,7 @@ class TensorField(Section[Point,Tensor], abc.ABC):
         Bp = self.B(p)
         return Ap + Bp
 
-    return SumOfTensorFields(self, Y)
+    return SumOfTensorFields(self, Y, self.pi)
 
   def __radd__(self, Y: "TensorField") -> "TensorField":
     """Add Y from the right
@@ -965,8 +972,14 @@ class PullbackOfTensor(LinearMap[CovariantTensor,CovariantTensor]):
     # the coordinates of T might.
     output_coords = einops.einsum(*T.xs, *coordinate_transforms, contract)
 
-    TkTpM = TensorSpace(self.p, tensor_type=self.type, M=self.F.domain)
-    return CovariantTensor(output_coords, TkTpM=TkTpM)
+    # Create a new output tensor that has the same type as T (in case T is alternating)
+    from src.differential_form import AlternatingTensor, AlternatingTensorSpace
+    if isinstance(T, AlternatingTensor):
+      TkTpM = AlternatingTensorSpace(self.p, tensor_type=self.type, M=self.F.domain)
+      return AlternatingTensor(output_coords, TkTpM=TkTpM)
+    else:
+      TkTpM = TensorSpace(self.p, tensor_type=self.type, M=self.F.domain)
+      return Tensor(output_coords, TkTpM=TkTpM)
 
 ################################################################################################################
 

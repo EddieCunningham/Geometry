@@ -73,7 +73,7 @@ def cotangent_tensor_product_test():
       atlas = super().get_atlas()
 
       # Create a diffeomorphism that we can compose with the regular chart
-      _phi = get_chart_fun(dimension=self.dimension, rng_key=rng_key)
+      _phi = get_chart_fun(dimension=self.dimension, rng_key=rng_key, linear=True)
       phi = Diffeomorphism(_phi, domain=EuclideanManifold(dimension=self.dimension), image=EuclideanManifold(dimension=self.dimension))
 
       new_charts = []
