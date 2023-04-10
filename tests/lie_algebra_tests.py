@@ -34,9 +34,9 @@ def run_all():
   V3 = TangentVector(v3, TeG)
 
   # Make left invariant vector fields
-  X = lie_G.left_invariant_vector_field(V1)
-  Y = lie_G.left_invariant_vector_field(V2)
-  Z = lie_G.left_invariant_vector_field(V3)
+  X = lie_G.get_left_invariant_vector_field(V1)
+  Y = lie_G.get_left_invariant_vector_field(V2)
+  Z = lie_G.get_left_invariant_vector_field(V3)
 
   # Check that the bracket works
   a, b = random.normal(rng_key, (2,))

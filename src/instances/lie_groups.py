@@ -19,7 +19,7 @@ __all__ = ["RealLieGroup",
            "OrthogonalGroup",
            "EuclideanGroup"]
 
-class RealLieGroup(EuclideanManifold, _LieGroupMixin):
+class RealLieGroup(LieGroup):
   """Lie group under addition
 
   Attributes:
@@ -80,7 +80,7 @@ class RealLieGroup(EuclideanManifold, _LieGroupMixin):
 
 ################################################################################################################
 
-class GeneralLinearGroup(Manifold, _LieGroupMixin):
+class GeneralLinearGroup(LieGroup):
   """GL(n,R)
 
   Attributes:
@@ -154,6 +154,18 @@ class GeneralLinearGroup(Manifold, _LieGroupMixin):
     """
     return g@h
 
+  def get_lie_algebra(self) -> "LieAlgebra":
+    """Get the Lie algebra associated with this Lie group.  This is the
+    tangent space at the identity and it is equipped with a Lie bracket.
+
+    Returns:
+      Lie algebra of this Lie group
+    """
+    from src.lie_algebra import SpaceOfMatrices
+    return SpaceOfMatrices(dim=self.N)
+
+################################################################################################################
+
 class GLp(GeneralLinearGroup):
   """GL+(n,R) is the Lie group of matrices with positive determinant
 
@@ -196,6 +208,21 @@ class OrthogonalGroup(GeneralLinearGroup):
       return False
 
     return jnp.allclose(jnp.linalg.svd(p, compute_uv=False), 1.0)
+
+  def get_lie_algebra(self) -> "LieAlgebra":
+    """Get the Lie algebra associated with this Lie group.  This is the
+    tangent space at the identity and it is equipped with a Lie bracket.
+
+    Returns:
+      Lie algebra of this Lie group
+    """
+    from src.lie_algebra import SpaceOfMatrices
+    class SpaceOfSkewSymmetricMatrices(SpaceOfMatrices):
+      def __contains__(self, p: Point) -> bool:
+        if super().__contains__(p) == False:
+          return False
+        return jnp.allclose(p, -p.T)
+    return SpaceOfSkewSymmetricMatrices(dim=self.N)
 
 ################################################################################################################
 

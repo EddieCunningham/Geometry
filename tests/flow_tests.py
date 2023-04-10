@@ -27,7 +27,7 @@ def run_all():
   TeG = TangentSpace(G.e, G)
   v = random.normal(rng_key, (16,))
   V = TangentVector(v, TeG)
-  X = lie_G.left_invariant_vector_field(V)
+  X = lie_G.get_left_invariant_vector_field(V)
 
   # Construct its integral curve
   rng_key, key = random.split(rng_key, 2)
@@ -78,4 +78,7 @@ if __name__ == "__main__":
   from debug import *
   # jax.config.update('jax_disable_jit', True)
   jax.config.update("jax_enable_x64", True)
+
+  util.GLOBAL_CHECK = False
   run_all()
+  util.GLOBAL_CHECK = True

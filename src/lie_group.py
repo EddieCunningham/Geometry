@@ -10,19 +10,20 @@ from src.map import *
 from src.manifold import *
 import src.util as util
 
-__all__ = ["_LieGroupMixin",
-           "LieGroup",
+__all__ = ["LieGroup",
            "SemiDirectProductLieGroup",
            "semidirect_product",
            "internal_semidirect_product"]
 
-class _LieGroupMixin(abc.ABC):
+class LieGroup(Manifold, abc.ABC):
   """A smooth manifold that is also a group
 
   Attributes:
     atlas: Atlas providing coordinate representation.
     boundary: Optional boundary of the manifold
   """
+  Element = Point
+
   def get_identity_element(self) -> Point:
     """The identity element, e, of the Lie group
 
@@ -125,6 +126,34 @@ class _LieGroupMixin(abc.ABC):
       return self.multiplication_map(p, g)
     return Map(theta_g, domain=M, image=M)
 
+  def left_orbit_map(self, p: Point, M: Manifold) -> Map[Point,Point]:
+    """The left action map of G on M, but written as an orbit map.
+    So theta^(p): Lie(G) -> M and g |-> g*p
+
+    Args:
+      p: A point on the manifold
+
+    Returns:
+      theta_p
+    """
+    def theta_p(g: Point) -> Point:
+      return self.multiplication_map(g, p)
+    return Map(theta_p, domain=self, image=M)
+
+  def right_orbit_map(self, p: Point, M: Manifold) -> Map[Point,Point]:
+    """The right action map of G on M, but written as an orbit map.
+    So theta^(p): Lie(G) -> M and g |-> p*g
+
+    Args:
+      p: A point on the manifold
+
+    Returns:
+      theta_p
+    """
+    def theta_p(g: Point) -> Point:
+      return self.multiplication_map(p, g)
+    return Map(theta_p, domain=self, image=M)
+
   def conjugation_map(self, g: Point) -> Map[Point,Point]:
     """The conjugation map for g.  C_g: G -> G is given by C_g(h) = ghg^{-1}
 
@@ -140,12 +169,19 @@ class _LieGroupMixin(abc.ABC):
       return self.multiplication_map(g, hg_inv)
     return Map(conjugate, domain=self, image=self)
 
-class LieGroup(Manifold, _LieGroupMixin):
-  Element = Point
+  # @abc.abstractmethod
+  def get_lie_algebra(self) -> "LieAlgebra":
+    """Get the Lie algebra associated with this Lie group.  This is the
+    tangent space at the identity and it is equipped with a Lie bracket.
+
+    Returns:
+      Lie algebra of this Lie group
+    """
+    assert 0, "Not implemented"
 
 ################################################################################################################
 
-class SemiDirectProductLieGroup(CartesianProductManifold, _LieGroupMixin):
+class SemiDirectProductLieGroup(CartesianProductManifold, LieGroup):
   """The semi direct product of Lie groups N and H.  Elements are in the
      Cartesian product: (n,h) in N x H and the multiplication map is defined
      as (n,h)*(n',h') = (nL_h(n'), hh') where L_h: is a left action of H on N

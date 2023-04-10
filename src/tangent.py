@@ -435,6 +435,9 @@ class Differential(LinearMap[TangentVector,TangentVector]):
     phi = self.domain.manifold.get_chart_for_point(self.p)
     p_hat = phi(self.p)
 
+    broove = self.F(self.p)
+    F_hat(p_hat)
+
     # Find the coordinates of the tangent vector on N
     q_hat, z = jax.jvp(F_hat.f, (p_hat,), (v.x,))
     return TangentVector(z, self.TpN)

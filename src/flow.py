@@ -10,12 +10,16 @@ from src.map import *
 from src.manifold import *
 from src.tangent import *
 from src.section import *
+from src.lie_group import *
 from src.vector_field import *
+from src.bundle import *
 import src.util as util
 import diffrax
 
 __all__ = ["IntegralCurve",
            "Flow",
+           "FlowInducedByGroupAction",
+           "get_infinitesmal_generator_map",
            "TimeDependentFlow"]
 
 class IntegralCurve(Map[Coordinate,Point]):
@@ -50,6 +54,8 @@ class IntegralCurve(Map[Coordinate,Point]):
     Returns:
       Value at t
     """
+    sign = jnp.where(t < 0.0, -1.0, 1.0)
+
     # Will be using the same chart for all points on the trajectory!
     # TODO: Integrate using dynamic charts
     chart = self.manifold.get_chart_for_point(self.p0)
@@ -63,15 +69,18 @@ class IntegralCurve(Map[Coordinate,Point]):
       # Evaluate the vector field and get coordinates of the manifold
       Vp = self.V(p)
 
+      # Swap the sign if needed
+      Vp = sign*Vp
+
       # Get the coordinate representation of this vector using
       # the chart coordinates
       return Vp.get_coordinates(chart)
 
     term = diffrax.ODETerm(f)
     solver = diffrax.Dopri5()
-    solution = diffrax.diffeqsolve(term, solver, t0=0.0, t1=t, dt0=0.001, y0=p0_hat)
+    solution = diffrax.diffeqsolve(term, solver, t0=0.0, t1=sign*t, dt0=0.001, y0=p0_hat)
     z = solution.ys[0]
-    return z
+    return chart.inverse(z)
 
   def as_map(self) -> Map:
     """Return this function as a map.  Makes composition easier because
@@ -101,6 +110,17 @@ class Flow(Map[Tuple[Coordinate,Point],Point]):
     """
     self.manifold = M
     self.V = V
+
+  def infinitesmal_generator(self, p: Point) -> TangentVector:
+    """Get the tangent vector for p
+
+    Args:
+      p: An input point.
+
+    Returns:
+      V(p)
+    """
+    return self.V(p)
 
   def __call__(self, t: Coordinate, p: Point) -> Point:
     """Applies the function on p.
@@ -139,6 +159,78 @@ class Flow(Map[Tuple[Coordinate,Point],Point]):
     def theta_t(p: Point) -> Point:
       return self(t, p)
     return Map(theta_t, domain=self.manifold, image=self.manifold)
+
+################################################################################################################
+
+class FlowInducedByGroupAction(Flow):
+  """Given a manifold M and a group G that has a right group action on M, this flow
+  is defined by (t,p) |-> p*exp(tX) where X is an element of the Lie algebra of G.
+
+  Attributes:
+    manifold: The manifold that the flow is defined on
+    G: The group with a right group action over M
+    X: An element of the Lie algebra of G that determines one parameter subgroup
+    right_action: Whether or not to use the right group action on the manifold
+  """
+  def __init__(self, M: Manifold, G: LieGroup, X: TangentVector, right_action: Optional[bool]=True):
+    self.manifold = M
+    self.G = G
+    self.lieG = self.G.get_lie_algebra()
+    self.X = X
+    self.ops = self.lieG.get_one_parameter_subgroup(self.X)
+
+    self.right_action = right_action
+
+  def __call__(self, t: Coordinate, p: Point) -> Point:
+    """Applies the function on p.
+
+    Args:
+      t: Input time
+      p: An input point.
+
+    Returns:
+      f(p)
+    """
+    g = self.ops(t)
+    if self.right_action:
+      return self.G.right_action_map(g, self.manifold)(p)
+    else:
+      return self.G.left_action_map(g, self.manifold)(p)
+
+  def infinitesmal_generator(self, p: Point) -> TangentVector:
+    """Get the tangent vector for p.  This is d(theta^(p))_e(X_e)
+    Basially pushforward of X_e through the map theta^(p): h |--> p*h
+
+    Args:
+      p: An input point.
+
+    Returns:
+      Xhat_p
+    """
+    if self.right_action:
+      dtheta_p_e = self.G.right_orbit_map(p, self.manifold).get_differential(self.G.e)
+    else:
+      dtheta_p_e = self.G.left_orbit_map(p, self.manifold).get_differential(self.G.e)
+    return dtheta_p_e(self.X.v)
+
+def get_infinitesmal_generator_map(G: LieGroup, M: Manifold, right_action: Optional[bool]=True) -> Map["LeftInvariantVectorField",VectorField]:
+  """Get the tangent vector for p.  This is d(theta^(p))_e(X_e)
+
+  Args:
+    p: An input point.
+
+  Returns:
+    V(p)
+  """
+  assert isinstance(G, LieGroup)
+  def theta_hat(X):
+    flow = FlowInducedByGroupAction(M, G, X, right_action=right_action)
+    class InfinitesmalGeneratorVectorField(VectorField):
+      def apply_to_point(self, p: Point) -> TangentVector:
+        return flow.infinitesmal_generator(p)
+
+    return InfinitesmalGeneratorVectorField(M)
+  return Map(theta_hat, domain=G.get_lie_algebra(), image=TangentBundle(M))
 
 ################################################################################################################
 

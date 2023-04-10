@@ -25,10 +25,7 @@ if __name__ == "__main__":
   run_all_lie_group()
   run_all_vector_field()
   run_all_lie_algebra()
-
-  with util.global_check_off():
-    run_all_flow()
-
+  run_all_flow()
   run_all_bundle()
   run_all_cotangent()
   run_all_tensor()

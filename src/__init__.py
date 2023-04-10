@@ -17,4 +17,3 @@ from src.differential_form import *
 from src.instances.manifolds import *
 from src.instances.lie_groups import *
 from src.instances.vector_fields import *
-

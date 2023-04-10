@@ -63,6 +63,16 @@ def pushforward(F: Map, X: VectorField) -> PushforwardVectorField:
   Returns:
     F_*(X)
   """
+  from src.lie_algebra import LeftInvariantVectorField
+  if isinstance(X, LeftInvariantVectorField):
+    from src.lie_group import LieGroup
+    assert isinstance(F.domain, LieGroup) and isinstance(F.image, LieGroup)
+    # Just requires us to push forward the tangent vector at the identity
+    dFe = F.get_differential(X.G.e)
+    Yv = dFe(X.v)
+    return LeftInvariantVectorField(Yv, F.image)
+
+  assert isinstance(X, VectorField)
   return PushforwardVectorField(F, X)
 
 ################################################################################################################

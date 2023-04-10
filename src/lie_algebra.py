@@ -13,12 +13,14 @@ from src.tangent import *
 from src.vector import *
 from src.vector_field import *
 from src.section import *
+from src.bundle import *
+from src.flow import *
 from src.instances.manifolds import *
 from src.instances.lie_groups import *
 import src.util as util
 
-__all__ = ["_LieAlgebraMixin",
-           "LieAlgebra",
+__all__ = ["LieAlgebra",
+           "LeftInvariantVectorField",
            "SpaceOfVectorFields",
            "SpaceOfMatrices"]
 
@@ -27,7 +29,7 @@ class LeftInvariantVectorField(VectorField):
   element of the Lie algebra
 
   Attributes:
-    v: The vector in the Lie algebra
+    v: The vector in TeG
     G: The Lie group
   """
   def __init__(self, v: TangentVector, G: LieGroup):
@@ -36,6 +38,7 @@ class LeftInvariantVectorField(VectorField):
     Args:
       dim: Dimension
     """
+    assert isinstance(v, TangentVector)
     self.v = v
     self.G = G
     self.manifold = self.G
@@ -43,55 +46,70 @@ class LeftInvariantVectorField(VectorField):
 
   def apply_to_point(self, g: Point) -> TangentVector:
     """Evaluate the vector field at a point.
+    Basially pushforward of X_e through the map L_g: h |--> g*h
 
     Args:
       p: Point on the manifold.
 
     Returns:
-      Tangent vector at p.
+      Tangent vector at g.
     """
     dLe = self.G.left_translation_map(g).get_differential(self.G.e)
     return dLe(self.v)
 
-class _LieAlgebraMixin(abc.ABC):
-  """A real vector space endowed with a bracket.
+################################################################################################################
+
+class PushforwardLeftInvariantVectorField(LeftInvariantVectorField):
+  """The pushforward of a vector field X through a diffeomorphism F
+
+  Attributes:
+    F: Map
+    X: Vector field
   """
+  def __init__(self, F: Map, X: LeftInvariantVectorField):
+    """Create a new pushforward vector field object
 
-  @abc.abstractmethod
-  def bracket(self, X: Point, Y: Point) -> Point:
-    """A real vector space endowed with a bracket
+    Args:
+      F: Map
+      X: Vector field
+    """
+    assert isinstance(F.domain, LieGroup)
+    assert isinstance(F.image, LieGroup)
+    assert X.manifold == F.domain
+    self.F = F
+    self.X = X
+    super().__init__(M=F.image)
 
-    Attributes:
-      X: Element of lie algebra
-      Y: Element of lie algebra
+    self.G = self.F.domain
+    self.H = self.F.image
+
+  def apply_to_point(self, q: Point) -> TangentVector:
+    """Evaluate the vector field at a point.
+
+    Args:
+      q: Point on the output manifold.
 
     Returns:
-      Z: New element of lie algebra
+      Tangent vector at q.
     """
-    pass
+    self.H.inverse(q)
 
-  def left_invariant_vector_field(self, v: TangentVector) -> LeftInvariantVectorField:
-    """Given v in TeG, return the vector field V where V_g = d(L_g)_e(v)
+    p = self.F.inverse(q)
+    Xp = self.X(p)
+    dFp = self.F.get_differential(p)
+    return dFp(Xp)
 
-    Attributes:
-      v: A tangent vector at the identity
 
-    Returns:
-      A vector field where at point g, V_g = d(L_g)_e(v)
-    """
-    if util.GLOBAL_CHECK:
-      assert isinstance(v, TangentVector)
-      assert v.TpM == TangentSpace(self.G.e, self.G)
+################################################################################################################
 
-    return LeftInvariantVectorField(v, self.G)
-
-class LieAlgebra(TangentSpace, _LieAlgebraMixin):
-  """The Lie algebra of a Lie group is the tangent space at the identity
+class LieAlgebra(Manifold, abc.ABC):
+  """The Lie algebra of a Lie group is the algebra of all smooth left-invariant vector
+  fields on a Lie group G.  It is isomorphic to the tangent space of G at the identity.
 
   Attributes:
     G: The Lie group
   """
-  Element = Vector
+  Element = LeftInvariantVectorField
 
   def __init__(self, G: LieGroup):
     """Create a Lie algebra object
@@ -100,16 +118,102 @@ class LieAlgebra(TangentSpace, _LieAlgebraMixin):
       G: The corresponding Lie group
     """
     self.G = G
-    super().__init__(G.e, G)
+    self.TeG = TangentSpace(self.G.e, self.G)
+    super().__init__(dimension=self.G.dimension)
+
+  def __contains__(self, p: Point) -> bool:
+    """Checks to see if p exists in the manifold.  This is the case if
+       the point is in the domain of any chart
+
+    Args:
+      p: Test point.
+
+    Returns:
+      True if p is in the manifold, False otherwise.
+    """
+    type_check = isinstance(p, LeftInvariantVectorField)
+    manifold_check = self.G == p.G
+    return type_check and manifold_check
+
+  def get_atlas(self) -> "Atlas":
+    """Construct the atlas for a manifold
+
+    Attributes:
+      atlas: Atlas providing coordinate representation.
+    """
+    def chart_fun(v, inverse=False):
+      if inverse == False:
+        assert isinstance(v, LeftInvariantVectorField)
+        # Evaluate at the identity
+        ve = v(self.G.e)
+        return ve.x
+      else:
+        # Create tangent vector at identity
+        ve = TangentVector(v, self.TeG)
+        return self.get_left_invariant_vector_field(ve)
+
+    self.chart = Chart(chart_fun, domain=self, image=Reals(dimension=self.dimension))
+    return Atlas([self.chart])
+
+  @abc.abstractmethod
+  def bracket(self, X: Point, Y: Point) -> Point:
+    """A real vector space endowed with a bracket
+
+    Args:
+      X: Element of lie algebra
+      Y: Element of lie algebra
+
+    Returns:
+      Z: New element of lie algebra
+    """
+    pass
+
+  def get_left_invariant_vector_field(self, v: TangentVector) -> LeftInvariantVectorField:
+    """Given v in TeG, return the vector field V where V_g = d(L_g)_e(v)
+
+    Args:
+      v: A tangent vector at the identity
+
+    Returns:
+      A vector field where at point g, V_g = d(L_g)_e(v)
+    """
+    assert isinstance(v, TangentVector)
+    assert v.TpM == TangentSpace(self.G.e, self.G)
+    return LeftInvariantVectorField(v, self.G)
+
+  def get_one_parameter_subgroup(self, X: LeftInvariantVectorField) -> IntegralCurve:
+    """One parameter subgroup generated by X.  These are maximal integral curves
+    of left invariant vector fields starting at the identity.
+
+    Args:
+      X: A left invariant vector field
+
+    Returns:
+      The integral curve generated by X
+    """
+    assert isinstance(X, LeftInvariantVectorField)
+    return IntegralCurve(self.G.e, X)
+
+  def get_exponential_map(self) -> Map[LeftInvariantVectorField,Point]:
+    """exp: Lie(G) -> G is defined by exp(X) = one_parameter_subgroup(1.0).
+    This turns a left invariant vector field into an element of the Lie group.
+
+    Returns:
+      The exponential map
+    """
+    def f(X: LeftInvariantVectorField):
+      ops = self.get_one_parameter_subgroup(X)
+      return ops(1.0)
+    return Map(f, domain=self, image=self.G)
 
 ################################################################################################################
 
-class SpaceOfVectorFields(EuclideanManifold, _LieAlgebraMixin):
+class SpaceOfVectorFields(LieAlgebra):
 
   def bracket(self, X: VectorField, Y: VectorField) -> VectorField:
     """This is just the lie bracket
 
-    Attributes:
+    Args:
       X: Element of lie algebra
       Y: Element of lie algebra
 
@@ -135,7 +239,7 @@ class SpaceOfMatrices(LieAlgebra):
     GLn = GeneralLinearGroup(self.N)
     super().__init__(GLn)
 
-  def bracket(self, A: Point, B: Point) -> Point:
+  def bracket(self, A: LeftInvariantVectorField, B: LeftInvariantVectorField) -> LeftInvariantVectorField:
     """Commutator bracket [A,B] = AB - BA
 
     Attributes:
@@ -146,23 +250,20 @@ class SpaceOfMatrices(LieAlgebra):
       Z: New element of lie algebra
     """
     dim = self.G.N
+    assert isinstance(A, LeftInvariantVectorField)
+    assert isinstance(B, LeftInvariantVectorField)
+    assert A.G == B.G
+    G = A.G
+    lieG = G.get_lie_algebra()
 
-    class Bracket(VectorField):
-      def __init__(self):
-        self.A = A
-        self.B = B
-        super().__init__(A.manifold)
+    # Apply the lie bracket at the identity
+    a = A.v.x.reshape((dim, dim))
+    b = B.v.x.reshape((dim, dim))
+    c = a@b - b@a
 
-      def apply_to_point(self, p: Point) -> TangentVector:
-        Ap, Bp = self.A(p), self.B(p)
-
-        # Get the matrix components of each tangent vector
-        a = Ap.x.reshape((dim, dim))
-        b = Bp.x.reshape((dim, dim))
-        c = a@b - b@a
-        return TangentVector(c.ravel(), Ap.TpM)
-
-    return Bracket()
+    Ce = TangentVector(c.ravel(), lieG.TeG)
+    C = lieG.get_left_invariant_vector_field(Ce)
+    return C
 
   def __contains__(self, p: Point) -> bool:
     shape_condition = p.shape == (self.N, self.N)
