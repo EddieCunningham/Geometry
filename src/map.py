@@ -13,6 +13,7 @@ __all__ = ["Input",
            "Map",
            "IdentityMap",
            "LinearMap",
+           "InvertibleLinearMap",
            "MultlinearMap",
            "ProjectionMap",
            "Function",
@@ -415,6 +416,9 @@ class InvertibleMap(Map[Input,Output], _InvertibleMixin):
 class Diffeomorphism(Map[Input,Output], _InvertibleMixin):
   """M <-> N
   """
+  pass
+
+class InvertibleLinearMap(LinearMap, _InvertibleMixin):
   pass
 
 def compose(*maps: List[Map]) -> Map:

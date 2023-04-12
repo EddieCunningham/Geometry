@@ -13,7 +13,7 @@ from src.cotangent import *
 from src.vector_field import *
 from src.instances.manifolds import EuclideanManifold
 from src.vector import *
-from src.instances.lie_groups import GeneralLinearGroup
+from src.instances.lie_groups import GLRn
 import diffrax
 import abc
 
@@ -242,7 +242,7 @@ class GlobalDifferential(LinearMap[TangentBundle,TangentBundle]):
     self.manifold = M
     self.domain = TangentBundle(M)
     self.image = TangentBundle(apply_map_to_manifold(self.F, self.manifold))
-    super().__init__(self.__call__, domain=self.domain, image=self.image)
+    Map.__init__(self, self.__call__, domain=self.domain, image=self.image)
 
   def __call__(self, x: TangentVector) -> TangentVector:
     """Compute the differential of a tangent vector
@@ -338,7 +338,7 @@ class FrameBundle(FiberBundle, abc.ABC):
     Args:
       M: The manifold.
     """
-    super().__init__(M, GeneralLinearGroup(dim=M.dimension))
+    super().__init__(M, GLRn(dim=M.dimension))
 
   def __contains__(self, x: TangentBasis) -> bool:
     """Checks to see if x exists in the bundle.
@@ -387,7 +387,7 @@ class FrameBundle(FiberBundle, abc.ABC):
         basis = TangentBasis([TangentVector(x.ravel(), TpM) for x in xs], TpM)
         return basis
 
-    image = ProductBundle(self.manifold, GeneralLinearGroup(dim=self.manifold.dimension))
+    image = ProductBundle(self.manifold, GLRn(dim=self.manifold.dimension))
     return Diffeomorphism(Phi, domain=self, image=image)
 
   def get_atlas(self):
@@ -396,7 +396,7 @@ class FrameBundle(FiberBundle, abc.ABC):
     """
     return None
 
-  # def right_action_map(self, g: GeneralLinearGroup, F: Frame) -> Map[Frame,Frame]:
+  # def right_action_map(self, g: GLRn, F: Frame) -> Map[Frame,Frame]:
   #   """The right action map of G on M.  This is set to
   #      a translation map by default.
 
@@ -432,7 +432,7 @@ class CoframeBundle(FiberBundle, abc.ABC):
     Args:
       M: The manifold.
     """
-    super().__init__(M, GeneralLinearGroup(dim=M.dimension))
+    super().__init__(M, GLRn(dim=M.dimension))
 
   def __contains__(self, x: CotangentBasis) -> bool:
     """Checks to see if x exists in the bundle.
@@ -481,7 +481,7 @@ class CoframeBundle(FiberBundle, abc.ABC):
         basis = CotangentBasis([CotangentVector(x.ravel(), coTpM) for x in xs], coTpM)
         return basis
 
-    image = ProductBundle(self.manifold, GeneralLinearGroup(dim=self.manifold.dimension))
+    image = ProductBundle(self.manifold, GLRn(dim=self.manifold.dimension))
     return Diffeomorphism(Phi, domain=self, image=image)
 
   def get_atlas(self):
@@ -490,7 +490,7 @@ class CoframeBundle(FiberBundle, abc.ABC):
     """
     return None
 
-  # def right_action_map(self, g: GeneralLinearGroup, F: CoFrame) -> Map[CoFrame,CoFrame]:
+  # def right_action_map(self, g: GLRn, F: CoFrame) -> Map[CoFrame,CoFrame]:
   #   """The right action map of G on M.  This is set to
   #      a translation map by default.
 

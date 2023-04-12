@@ -55,7 +55,7 @@ def internal_semidirect_product_test(rng_key):
   # Construct the internal semi-direct product of N and H
   # In this case, we'll have that the map (n,h) -> nh is a Lie group isomorphism between isp(N, H) and G.
   dim = 4
-  G = GeneralLinearGroup(dim=dim)
+  G = GLRn(dim=dim)
   N = GLp(dim=dim)
   H = GLp(dim=dim)
   NH = internal_semidirect_product(N, H)
@@ -82,10 +82,10 @@ def run_all():
   jax.config.update("jax_enable_x64", True)
 
   rng_key = random.PRNGKey(0)
-  M = GeneralLinearGroup(dim=4)
+  M = GLRn(dim=4)
   p = random.normal(rng_key, (M.N, M.N))
 
-  group = GeneralLinearGroup(dim=4)
+  group = GLRn(dim=4)
   g, h, l = random.normal(rng_key, (3, group.N, group.N))
   general_linear_test(group, g, h, l, M, p)
 

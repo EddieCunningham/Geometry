@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Union
 import src.util
 from functools import partial
 from copy import deepcopy
@@ -21,7 +21,10 @@ import src.util as util
 
 __all__ = ["LieAlgebra",
            "LeftInvariantVectorField",
+           "induced_lie_algebra_homomorphism",
+           "InducedLieAlgebraHomomorphismLIVF",
            "SpaceOfVectorFields",
+           "SpaceOfLieAlgebraLinearMaps",
            "SpaceOfMatrices"]
 
 class LeftInvariantVectorField(VectorField):
@@ -39,6 +42,7 @@ class LeftInvariantVectorField(VectorField):
       dim: Dimension
     """
     assert isinstance(v, TangentVector)
+    assert isinstance(G, LieGroup)
     self.v = v
     self.G = G
     self.manifold = self.G
@@ -54,51 +58,103 @@ class LeftInvariantVectorField(VectorField):
     Returns:
       Tangent vector at g.
     """
-    dLe = self.G.left_translation_map(g).get_differential(self.G.e)
-    return dLe(self.v)
+    dLg_e = self.G.left_translation_map(g).get_differential(self.G.e)
+    return dLg_e(self.v)
+
+  def __add__(self, Y: "LeftInvariantVectorField") -> "LeftInvariantVectorField":
+    """Add two sections together
+
+    Args:
+      Y: Another LeftInvariantVectorField
+
+    Returns:
+      X + Y
+    """
+    # Ensure that X and Y are compatable
+    assert self.manifold == Y.manifold
+    # assert self.total_space == Y.total_space
+
+    class SectionSum(LeftInvariantVectorField):
+      def __init__(self, X, Y, pi):
+        self.X = X
+        self.Y = Y
+        self.G = X.G
+        Section.__init__(self, pi)
+
+      def apply_to_point(self, p: Input) -> Output:
+        return self.X(p) + self.Y(p)
+
+    return SectionSum(self, Y, self.pi)
+
+  def __rmul__(self, f: Union[Map,float]) -> "LeftInvariantVectorField":
+    """Multiply a LeftInvariantVectorField with a scalar or function. fX
+
+    Args:
+      f: Another map or a scalar
+
+    Returns:
+      fX
+    """
+    is_map = isinstance(f, Map)
+    is_scalar = f in Reals(dimension=1)
+
+    assert is_map or is_scalar
+
+    class SectionRHSProduct(LeftInvariantVectorField):
+      def __init__(self, X, pi):
+        self.X = X
+        self.G = X.G
+        self.lhs = f
+        self.is_float = f in Reals(dimension=1)
+        Section.__init__(self, pi)
+
+      def apply_to_point(self, p: Input) -> Output:
+        fp = self.lhs if self.is_float else self.lhs(p)
+        Xp = self.X(p)
+        return fp*Xp
+
+    return SectionRHSProduct(self, self.pi)
 
 ################################################################################################################
 
-class PushforwardLeftInvariantVectorField(LeftInvariantVectorField):
-  """The pushforward of a vector field X through a diffeomorphism F
+def induced_lie_algebra_homomorphism(F, X):
+  return InducedLieAlgebraHomomorphismLIVF(F, X)
+
+class InducedLieAlgebraHomomorphismLIVF(LeftInvariantVectorField):
+  """The left invariant vector field corresponding to an
+  element of the Lie algebra
 
   Attributes:
-    F: Map
-    X: Vector field
+    v: The vector in TeG
+    G: The Lie group
   """
   def __init__(self, F: Map, X: LeftInvariantVectorField):
-    """Create a new pushforward vector field object
+    """Create the object
 
     Args:
-      F: Map
-      X: Vector field
+      dim: Dimension
     """
-    assert isinstance(F.domain, LieGroup)
-    assert isinstance(F.image, LieGroup)
-    assert X.manifold == F.domain
+    assert isinstance(F.domain, LieGroup) and isinstance(F.image, LieGroup)
     self.F = F
-    self.X = X
-    super().__init__(M=F.image)
 
-    self.G = self.F.domain
-    self.H = self.F.image
+    # Get the push forward the tangent vector at the identity
+    dFe = F.get_differential(X.G.e)
+    Xe = X(X.G.e)
+    Ye = dFe(Xe)
 
-  def apply_to_point(self, q: Point) -> TangentVector:
+    super().__init__(Ye, self.F.image)
+
+  def apply_to_point(self, g: Point) -> TangentVector:
     """Evaluate the vector field at a point.
+    Basially pushforward of X_e through the map L_g: h |--> g*h
 
     Args:
-      q: Point on the output manifold.
+      p: Point on the manifold.
 
     Returns:
-      Tangent vector at q.
+      Tangent vector at g.
     """
-    self.H.inverse(q)
-
-    p = self.F.inverse(q)
-    Xp = self.X(p)
-    dFp = self.F.get_differential(p)
-    return dFp(Xp)
-
+    return super().apply_to_point(g)
 
 ################################################################################################################
 
@@ -206,6 +262,19 @@ class LieAlgebra(Manifold, abc.ABC):
       return ops(1.0)
     return Map(f, domain=self, image=self.G)
 
+  def get_adjoint_representation(self) -> Map[Point,LinearMap]:
+    """Get the adjoint representation of this Lie algebra.  This turns a
+    left invariant vector field into a matrix lie algebra.
+
+    Returns:
+      Adjoint representation
+    """
+    def _ad(X: LeftInvariantVectorField):
+      return Map(lambda Y: self.bracket(X, Y), domain=self, image=self)
+
+    ad = Map(_ad, domain=self, image=SpaceOfLieAlgebraLinearMaps(self.G))
+    return ad
+
 ################################################################################################################
 
 class SpaceOfVectorFields(LieAlgebra):
@@ -229,15 +298,14 @@ class SpaceOfVectorFields(LieAlgebra):
 
 class SpaceOfMatrices(LieAlgebra):
 
-  def __init__(self, dim: int):
+  def __init__(self, G: GLRn):
     """Create the space of nxn matrices.
 
     Args:
       dim: Dimension
     """
-    self.N = dim
-    GLn = GeneralLinearGroup(self.N)
-    super().__init__(GLn)
+    assert isinstance(G, GLRn)
+    super().__init__(G)
 
   def bracket(self, A: LeftInvariantVectorField, B: LeftInvariantVectorField) -> LeftInvariantVectorField:
     """Commutator bracket [A,B] = AB - BA
@@ -257,8 +325,55 @@ class SpaceOfMatrices(LieAlgebra):
     lieG = G.get_lie_algebra()
 
     # Apply the lie bracket at the identity
-    a = A.v.x.reshape((dim, dim))
-    b = B.v.x.reshape((dim, dim))
+    Ae = A(A.G.e)
+    Be = B(B.G.e)
+    a = Ae.x.reshape((dim, dim))
+    b = Be.x.reshape((dim, dim))
+    c = a@b - b@a
+
+    Ce = TangentVector(c.ravel(), lieG.TeG)
+    C = lieG.get_left_invariant_vector_field(Ce)
+    return C
+
+  def __contains__(self, p: Point) -> bool:
+    shape_condition = p.shape == (self.N, self.N)
+    return shape_condition
+
+################################################################################################################
+
+class SpaceOfLieAlgebraLinearMaps(LieAlgebra):
+
+  def __init__(self, G: LieGroup):
+    """Create the space of nxn matrices.
+
+    Args:
+      dim: Dimension
+    """
+    assert isinstance(G, LieGroup)
+    super().__init__(G)
+
+  def bracket(self, A: LeftInvariantVectorField, B: LeftInvariantVectorField) -> LeftInvariantVectorField:
+    """Commutator bracket [A,B] = AB - BA
+
+    Attributes:
+      X: Element of lie algebra
+      Y: Element of lie algebra
+
+    Returns:
+      Z: New element of lie algebra
+    """
+    dim = self.G.N
+    assert isinstance(A, LeftInvariantVectorField)
+    assert isinstance(B, LeftInvariantVectorField)
+    assert A.G == B.G
+    G = A.G
+    lieG = G.get_lie_algebra()
+
+    # Apply the lie bracket at the identity
+    Ae = A(A.G.e)
+    Be = B(B.G.e)
+    a = Ae.x.reshape((dim, dim))
+    b = Be.x.reshape((dim, dim))
     c = a@b - b@a
 
     Ce = TangentVector(c.ravel(), lieG.TeG)

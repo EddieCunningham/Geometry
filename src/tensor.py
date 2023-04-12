@@ -929,7 +929,7 @@ class PullbackOfTensor(LinearMap[CovariantTensor,CovariantTensor]):
 
     self.TkTpM = TensorSpace(self.p, tensor_type=self.type, M=F.domain)
     self.TkTpN = TensorSpace(self.q, tensor_type=self.type, M=F.image)
-    super().__init__(f=self.__call__, domain=self.TkTpN, image=self.TkTpM)
+    Map.__init__(self, f=self.__call__, domain=self.TkTpN, image=self.TkTpM)
 
   def __call__(self, T: CovariantTensor) -> CovariantTensor:
     """Apply the differential to a tangent vector.

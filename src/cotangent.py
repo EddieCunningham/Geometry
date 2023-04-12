@@ -426,7 +426,7 @@ class Pullback(LinearMap[CotangentVector,CotangentVector]):
 
     self.coTpM = CotangentSpace(self.p, M=F.domain)
     self.coTpN = CotangentSpace(self.q, M=F.image)
-    super().__init__(f=self.__call__, domain=self.coTpN, image=self.coTpM)
+    Map.__init__(self, f=self.__call__, domain=self.coTpN, image=self.coTpM)
 
   def __call__(self, w: CotangentVector) -> CotangentVector:
     """Apply the differential to a tangent vector.

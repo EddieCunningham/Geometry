@@ -211,7 +211,8 @@ class FlowInducedByGroupAction(Flow):
       dtheta_p_e = self.G.right_orbit_map(p, self.manifold).get_differential(self.G.e)
     else:
       dtheta_p_e = self.G.left_orbit_map(p, self.manifold).get_differential(self.G.e)
-    return dtheta_p_e(self.X.v)
+    Xe = self.X(self.G.e)
+    return dtheta_p_e(Xe)
 
 def get_infinitesmal_generator_map(G: LieGroup, M: Manifold, right_action: Optional[bool]=True) -> Map["LeftInvariantVectorField",VectorField]:
   """Get the tangent vector for p.  This is d(theta^(p))_e(X_e)

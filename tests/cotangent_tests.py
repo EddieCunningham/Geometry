@@ -114,7 +114,7 @@ def run_all():
   def _F(p):
     out = random.normal(rng_key, (5, 5))*jnp.sin(p)
     return out
-  N = GeneralLinearGroup(dim=5)
+  N = GLRn(dim=5)
   F = Map(_F, domain=M, image=N)
   Fp = F(p)
 

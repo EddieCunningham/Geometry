@@ -37,7 +37,7 @@ def run_all():
 
   # Construct the different manifolds and call their member functions
   m1 = EuclideanManifold(dimension=4)
-  m2 = GeneralLinearGroup(dim=4)
+  m2 = GLRn(dim=4)
   m3 = Sphere(dim=4)
   m4 = RealProjective(dim=4)
 

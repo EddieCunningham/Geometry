@@ -33,8 +33,8 @@ def one_parameter_subgroup_tests():
 
   # Create a Lie algebra
   dim = 4
-  lieG = SpaceOfMatrices(dim=dim)
-  G = lieG.G
+  G = GLRn(dim=dim)
+  lieG = G.get_lie_algebra()
 
   # Construct an element of the Lie algebra
   rng_key = random.PRNGKey(0)
@@ -91,8 +91,8 @@ def one_parameter_subgroup_tests():
   g = random.normal(k1, (dim, dim))
   Phi = G.conjugation_map(g)
 
-  # Get the pushforward
-  out1 = exp(pushforward(Phi, A))
+  # Get the induced Lie algebra homomorphism for Phi
+  out1 = exp(induced_lie_algebra_homomorphism(Phi, A))
   out2 = Phi(exp(A))
   assert jnp.allclose(out1, out2)
 
@@ -110,11 +110,11 @@ def infinitesmal_generator_tests():
   k1, k2, k3, k4, k5 = random.split(rng_key, 5)
 
   # Create a manifold
-  M = GeneralLinearGroup(dim=dim)
+  M = GLRn(dim=dim)
   p = random.normal(k2, (dim, dim))
 
   # Create a Lie group with a right action on M
-  class GroupOverFrame(GeneralLinearGroup):
+  class GroupOverFrame(GLRn):
 
     def right_orbit_map(self, p: Point, M: Manifold) -> Map[Point,Point]:
       def theta_p(g):
@@ -178,11 +178,11 @@ def adjoint_representation_tests():
   k1, k2, k3, k4, k5 = random.split(rng_key, 5)
 
   # Create a manifold
-  M = GeneralLinearGroup(dim=dim)
+  M = GLRn(dim=dim)
   p = random.normal(k2, (dim, dim))
 
   # Create a Lie group with a right action on M
-  class GroupOverFrame(GeneralLinearGroup):
+  class GroupOverFrame(GLRn):
 
     def right_orbit_map(self, p: Point, M: Manifold) -> Map[Point,Point]:
       def theta_p(g):
@@ -200,26 +200,48 @@ def adjoint_representation_tests():
 
   G = GroupOverFrame(dim=dim)
   lieG = G.get_lie_algebra()
+  g, g1, g2 = random.normal(k1, (3, dim, dim))
 
   # Get an element of the Lie algebra of G
-  X_coords = random.normal(k2, (dim**2,))
+  X_coords, Y_coords = random.normal(k2, (2, dim**2,))
   Xe = TangentVector(X_coords, lieG.TeG)
   X = lieG.get_left_invariant_vector_field(Xe)
 
-  # Get the conjugation map
-  g = random.normal(k1, (dim, dim))
-  Cg = G.conjugation_map(g)
+  Ye = TangentVector(Y_coords, lieG.TeG)
+  Y = lieG.get_left_invariant_vector_field(Ye)
 
-  # Ad(g)
-  def _Adg(X: LeftInvariantVectorField):
-    return pushforward(Cg, X)
 
-  Adg = Map(_Adg, domain=lieG, image=lieG)
+  # Check the adoint representation
+  Ad = G.get_adjoint_representation()
 
-  AdgX = Adg(X)
+  # Run some inputs through it
+  check = Ad(g)(X)(p)
 
-  import pdb; pdb.set_trace()
+  # Check composition
+  test1 = Ad(G.multiplication_map(g1, g2))
+  test2 = compose(Ad(g1), Ad(g2))
+  out1 = test1(X)(p)
+  out2 = test2(X)(p)
+  assert jnp.allclose(out1.x, out2.x)
 
+  # Inverse
+  test1 = compose(Ad(g), Ad(g).get_inverse())
+  out1 = test1(X)
+  assert jnp.allclose(out1(p).x, X(p).x)
+
+  # Adjoint representation of Lie algebra
+  ad = lieG.get_adjoint_representation()
+  adX = ad(X)
+
+  # Check that it is the pushforward of Ad
+  # Ad_starX = induced_lie_algebra_homomorphism(Ad, X)
+
+  test1 = adX(Y)(p)
+
+  # TODO: FIX THIS
+  # test2 = Ad_starX(Y)(p)
+  # assert jnp.allclose(test1.x, test2.x)
+  # import pdb; pdb.set_trace()
 
 ################################################################################################################
 
@@ -229,7 +251,7 @@ def run_all():
 
   one_parameter_subgroup_tests()
   infinitesmal_generator_tests()
-  # adjoint_representation_tests()
+  adjoint_representation_tests()
 
 if __name__ == "__main__":
   from debug import *

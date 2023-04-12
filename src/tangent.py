@@ -415,7 +415,7 @@ class Differential(LinearMap[TangentVector,TangentVector]):
 
     self.TpM = TangentSpace(self.p, M=F.domain)
     self.TpN = TangentSpace(self.q, M=F.image)
-    super().__init__(f=self.__call__, domain=self.TpM, image=self.TpN)
+    Map.__init__(self, f=self.__call__, domain=self.TpM, image=self.TpN)
 
   def __call__(self, v: TangentVector) -> TangentVector:
     """Apply the differential to a tangent vector.
@@ -435,8 +435,8 @@ class Differential(LinearMap[TangentVector,TangentVector]):
     phi = self.domain.manifold.get_chart_for_point(self.p)
     p_hat = phi(self.p)
 
-    broove = self.F(self.p)
-    F_hat(p_hat)
+    test_out = self.F(self.p)
+    test_out_coords = F_hat(p_hat)
 
     # Find the coordinates of the tangent vector on N
     q_hat, z = jax.jvp(F_hat.f, (p_hat,), (v.x,))

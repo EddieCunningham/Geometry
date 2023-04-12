@@ -88,6 +88,14 @@ class Section(Map[Input,Output], abc.ABC):
     return SectionSum(self, Y, self.pi)
 
   def __radd__(self, Y: "Section") -> "Section":
+    """Add Y from the right
+
+    Args:
+      Y: Another section
+
+    Returns:
+      X + Y
+    """
     return self + Y
 
   def __rmul__(self, f: Union[Map,float]) -> "Section":

@@ -24,13 +24,14 @@ class LieGroup(Manifold, abc.ABC):
   """
   Element = Point
 
+  @abc.abstractmethod
   def get_identity_element(self) -> Point:
     """The identity element, e, of the Lie group
 
     Returns:
       e: The identity element
     """
-    assert 0
+    pass
 
   @property
   def e(self) -> Point:
@@ -41,6 +42,7 @@ class LieGroup(Manifold, abc.ABC):
     """
     return self.get_identity_element()
 
+  @abc.abstractmethod
   def inverse(self, g: Point) -> Point:
     """The inverse map of the Lie group.  Satisfies m(g,I(g)) = e
 
@@ -50,8 +52,9 @@ class LieGroup(Manifold, abc.ABC):
     Returns:
       g^{-1}
     """
-    assert 0
+    pass
 
+  @abc.abstractmethod
   def multiplication_map(self, g: Point, h: Point) -> Point:
     """The multiplication map for the Lie group
 
@@ -62,7 +65,7 @@ class LieGroup(Manifold, abc.ABC):
     Returns:
       m(g,h)
     """
-    assert 0
+    pass
 
   def left_translation_map(self, g: Point) -> Diffeomorphism[Point,Point]:
     """The left translation map L_g.  The map is L_g(h) = m(g,h)
@@ -163,13 +166,17 @@ class LieGroup(Manifold, abc.ABC):
     Returns:
       C_g
     """
-    def conjugate(h):
-      g_inv = self.inverse(g)
-      hg_inv = self.multiplication_map(h, g_inv)
-      return self.multiplication_map(g, hg_inv)
-    return Map(conjugate, domain=self, image=self)
+    def conjugate(h, inverse=False):
+      if inverse == False:
+        g_inv = self.inverse(g)
+        hg_inv = self.multiplication_map(h, g_inv)
+        return self.multiplication_map(g, hg_inv)
+      else:
+        g_inv = self.inverse(g)
+        hg = self.multiplication_map(h, g)
+        return self.multiplication_map(g_inv, hg)
+    return InvertibleMap(conjugate, domain=self, image=self)
 
-  # @abc.abstractmethod
   def get_lie_algebra(self) -> "LieAlgebra":
     """Get the Lie algebra associated with this Lie group.  This is the
     tangent space at the identity and it is equipped with a Lie bracket.
@@ -177,7 +184,35 @@ class LieGroup(Manifold, abc.ABC):
     Returns:
       Lie algebra of this Lie group
     """
-    assert 0, "Not implemented"
+    from src.lie_algebra import LieAlgebra
+    return LieAlgebra(self)
+
+  @property
+  def lieG(self):
+    if hasattr(self, "__lieG") == False:
+      self.__lieG = self.get_lie_algebra()
+    return self.__lieG
+
+  def get_adjoint_representation(self) -> Map[Point,LinearMap]:
+    """Get the adjoint representation of this Lie group.  This is a function that
+    turns an element of the Lie algebra into a linear map between left invariant
+    vector fields. Ad: G -> GL(Lie(G))
+
+    Returns:
+      Adjoint representation
+    """
+    from src.lie_algebra import LeftInvariantVectorField, induced_lie_algebra_homomorphism
+    from src.instances.lie_groups import GLLieG
+
+    def _Ad(g: Point) -> LinearMap[LeftInvariantVectorField,LeftInvariantVectorField]:
+
+      def pushfwd(X: LeftInvariantVectorField, inverse=False) -> LeftInvariantVectorField:
+        Cg = self.conjugation_map(g) if inverse == False else self.conjugation_map(self.inverse(g))
+        return induced_lie_algebra_homomorphism(Cg, X)
+      return InvertibleLinearMap(pushfwd, domain=self.lieG, image=self.lieG)
+
+    Ad = Map(_Ad, domain=self, image=GLLieG(self))
+    return Ad
 
 ################################################################################################################
 

@@ -160,7 +160,7 @@ def frame_bundle_tests():
   assert pi.is_submersion(basis)
 
   # Construct a frame bundle homomorphism by applying action of GL(n,R)
-  class GLWithAction(GeneralLinearGroup):
+  class GLWithAction(GLRn):
 
     def right_action_map(self, g: Point, FB: FrameBundle) -> Map[TangentBasis,TangentBasis]:
       def theta_g(basis: TangentBasis) -> TangentBasis:

@@ -15,6 +15,7 @@ from src.vector_field import *
 from src.flow import *
 from src.instances.manifolds import *
 from src.instances.vector_fields import *
+from src.instances.lie_groups import *
 import src.util as util
 
 def run_all():
@@ -22,8 +23,9 @@ def run_all():
   rng_key = random.PRNGKey(0)
 
   # Get a vector field
-  lie_G = SpaceOfMatrices(dim=4)
-  G = lie_G.G
+  G = GLRn(dim=4)
+  lie_G = G.get_lie_algebra()
+
   TeG = TangentSpace(G.e, G)
   v = random.normal(rng_key, (16,))
   V = TangentVector(v, TeG)
