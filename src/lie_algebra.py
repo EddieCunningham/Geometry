@@ -177,7 +177,7 @@ class LieAlgebra(Manifold, abc.ABC):
     self.TeG = TangentSpace(self.G.e, self.G)
     super().__init__(dimension=self.G.dimension)
 
-  def __contains__(self, p: Point) -> bool:
+  def contains(self, p: Point) -> bool:
     """Checks to see if p exists in the manifold.  This is the case if
        the point is in the domain of any chart
 
@@ -270,7 +270,7 @@ class LieAlgebra(Manifold, abc.ABC):
       Adjoint representation
     """
     def _ad(X: LeftInvariantVectorField):
-      return Map(lambda Y: self.bracket(X, Y), domain=self, image=self)
+      return LinearMap(lambda Y: self.bracket(X, Y), domain=self, image=self)
 
     ad = Map(_ad, domain=self, image=SpaceOfLieAlgebraLinearMaps(self.G))
     return ad
@@ -291,7 +291,7 @@ class SpaceOfVectorFields(LieAlgebra):
     """
     return lie_bracket(X, Y)
 
-  def __contains__(self, p: VectorField):
+  def contains(self, p: VectorField):
     return isinstance(p, VectorField)
 
 ################################################################################################################
@@ -335,13 +335,16 @@ class SpaceOfMatrices(LieAlgebra):
     C = lieG.get_left_invariant_vector_field(Ce)
     return C
 
-  def __contains__(self, p: Point) -> bool:
-    shape_condition = p.shape == (self.N, self.N)
-    return shape_condition
+  def contains(self, p: LeftInvariantVectorField) -> bool:
+    type_check = isinstance(p, LeftInvariantVectorField)
+    group_check = p.G == self.G
+    return type_check and group_check
 
 ################################################################################################################
 
-class SpaceOfLieAlgebraLinearMaps(LieAlgebra):
+class SpaceOfLieAlgebraLinearMaps(Set):
+
+  Element = LinearMap
 
   def __init__(self, G: LieGroup):
     """Create the space of nxn matrices.
@@ -349,37 +352,15 @@ class SpaceOfLieAlgebraLinearMaps(LieAlgebra):
     Args:
       dim: Dimension
     """
-    assert isinstance(G, LieGroup)
-    super().__init__(G)
+    self.G = G
+    super().__init__()
 
-  def bracket(self, A: LeftInvariantVectorField, B: LeftInvariantVectorField) -> LeftInvariantVectorField:
-    """Commutator bracket [A,B] = AB - BA
-
-    Attributes:
-      X: Element of lie algebra
-      Y: Element of lie algebra
-
-    Returns:
-      Z: New element of lie algebra
-    """
-    dim = self.G.N
-    assert isinstance(A, LeftInvariantVectorField)
-    assert isinstance(B, LeftInvariantVectorField)
-    assert A.G == B.G
-    G = A.G
-    lieG = G.get_lie_algebra()
-
-    # Apply the lie bracket at the identity
-    Ae = A(A.G.e)
-    Be = B(B.G.e)
-    a = Ae.x.reshape((dim, dim))
-    b = Be.x.reshape((dim, dim))
-    c = a@b - b@a
-
-    Ce = TangentVector(c.ravel(), lieG.TeG)
-    C = lieG.get_left_invariant_vector_field(Ce)
-    return C
-
-  def __contains__(self, p: Point) -> bool:
-    shape_condition = p.shape == (self.N, self.N)
-    return shape_condition
+  def contains(self, p: LinearMap) -> bool:
+    return True
+    type_check = isinstance(p, LinearMap)
+    domain_check = p.domain == self.G
+    image_check = p.image == self.G
+    out = type_check and domain_check and image_check
+    if out == False:
+      import pdb; pdb.set_trace()
+    return out

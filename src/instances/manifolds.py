@@ -45,7 +45,7 @@ class EuclideanManifold(Manifold, Reals):
     """
     return Atlas([Chart(phi=self.coordinate_function, domain=self.space, image=self.space)])
 
-  def __contains__(self, p: Point) -> bool:
+  def contains(self, p: Point) -> bool:
     """See if p is in this manifold
 
     Returns:
@@ -132,7 +132,10 @@ class Sphere(Manifold, Reals):
         return -sigma(-x, inverse=True)
 
     class DomainNorth(Sphere):
-      def __contains__(self, p):
+      def contains(self, p):
+        if util.GLOBAL_CHECK == False:
+          return True # Don't bother if we're using diffrax
+
         if jnp.allclose(jnp.linalg.norm(p), 1.0) == False:
           return False
 
@@ -146,7 +149,10 @@ class Sphere(Manifold, Reals):
         return None
 
     class DomainSouth(Sphere):
-      def __contains__(self, p):
+      def contains(self, p):
+        if util.GLOBAL_CHECK == False:
+          return True # Don't bother if we're using diffrax
+
         if jnp.allclose(jnp.linalg.norm(p), 1.0) == False:
           return False
 

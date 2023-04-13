@@ -127,7 +127,7 @@ class VectorSpace(EuclideanManifold):
     """
     super().__init__(dimension=dimension)
 
-  def __contains__(self, v: Vector) -> bool:
+  def contains(self, v: Vector) -> bool:
     """Checks to see if v is a part of this vector space
 
     Args:

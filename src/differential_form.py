@@ -96,7 +96,7 @@ class PermutationSet(Set):
     """
     self.k = k
 
-  def __contains__(self, p: Point) -> bool:
+  def contains(self, p: Point) -> bool:
     """Checks to see if p exists in this set.
 
     Args:
@@ -635,7 +635,7 @@ class AlternatingTensorBundle(TensorBundle):
     self.dimension = scipy.special.comb(self.manifold.dimension, self.type.l, exact=True)
     FiberBundle.__init__(self, M, EuclideanManifold(dimension=self.dimension))
 
-  def __contains__(self, x: Tensor) -> bool:
+  def contains(self, x: Tensor) -> bool:
     """Checks to see if x exists in the bundle.
 
     Args:
@@ -654,6 +654,21 @@ class AlternatingTensorBundle(TensorBundle):
       The map x -> p, x in E, p in M
     """
     return Map(lambda v: v.p, domain=self, image=self.manifold)
+
+  def _local_trivialization_map(self, inpt: Union[Element,Tuple[Point,"Fiber"]], inverse: bool=False) -> Union[Tuple[Point,"Fiber"],Element]:
+    """Contains the actual implementation of the local trivialization.
+
+    Args:
+      inpt: Either an element of the fiber bundle or a tuple (point on manifold, fiber)
+
+    Returns:
+      Either a tuple (point on manifold, fiber) or an element of the fiber bundle
+    """
+    if inverse == False:
+      return inpt.p, inpt.xs
+    else:
+      p, xs = inpt
+    return AlternatingTensor(*xs, TkTpM=AlternatingTensorSpace(p, self.tensor_type, self.manifold))
 
   def get_local_trivialization_map(self, T: AlternatingTensor) -> Map[AlternatingTensor,Tuple[Point,Coordinate]]:
     """Goes to the product space representation at p so that
@@ -680,12 +695,6 @@ class AlternatingTensorBundle(TensorBundle):
         p, xs = v
         return AlternatingTensor(*xs, TkTpM=AlternatingTensorSpace(p, self.tensor_type, self.manifold))
     return Diffeomorphism(Phi, domain=self, image=image)
-
-  def get_atlas(self):
-    """Computations are done using local trivializations, so this
-    shouldn't matter.
-    """
-    return None
 
 ################################################################################################################
 

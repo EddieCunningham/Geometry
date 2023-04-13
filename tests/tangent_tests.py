@@ -102,6 +102,7 @@ def differential_test(M: Manifold, N: Manifold, p: Point, F: Map, G: Map, f: Fun
 def run_all():
   from tests.manifold_tests import get_random_point
   # jax.config.update('jax_disable_jit', True)
+  jax.config.update("jax_enable_x64", True)
 
   rng_key = random.PRNGKey(0)
 

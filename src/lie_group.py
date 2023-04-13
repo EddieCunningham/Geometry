@@ -238,7 +238,7 @@ class SemiDirectProductLieGroup(CartesianProductManifold, LieGroup):
     self.H = H
     super().__init__(N, H)
 
-  def __contains__(self, p: Element) -> bool:
+  def contains(self, p: Element) -> bool:
     """Check if p is a part this object
 
     Args:

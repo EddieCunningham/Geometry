@@ -38,7 +38,7 @@ class RealLieGroup(LieGroup):
     self.space = Reals(dimension=dimension)
     super().__init__(dimension=dimension)
 
-  def __contains__(self, p: Point) -> bool:
+  def contains(self, p: Point) -> bool:
     return p in self.space
 
   def get_atlas(self) -> Atlas:
@@ -101,7 +101,7 @@ class GeneralLinearGroup(LieGroup):
     dim = self.vector_space.dimension
     super().__init__(dimension=dim**2)
 
-  def __contains__(self, g: LinearMap) -> bool:
+  def contains(self, g: LinearMap) -> bool:
     """Check if g is an invertible matrix
 
     Args:
@@ -157,7 +157,7 @@ class GLLieG(GeneralLinearGroup):
     self.G = G
     super().__init__(G)
 
-  def __contains__(self, p: LinearMap) -> bool:
+  def contains(self, p: LinearMap) -> bool:
     """Check if p is an invertible matrix
 
     Args:
@@ -166,6 +166,7 @@ class GLLieG(GeneralLinearGroup):
     Returns:
       True if p is in the set, False otherwise.
     """
+    from src.lie_algebra import LieAlgebra
     type_check = isinstance(p, LinearMap)
     domain_check = isinstance(p.domain, LieAlgebra)
     image_check = isinstance(p.image, LieAlgebra)
@@ -265,7 +266,7 @@ class GLRn(GeneralLinearGroup):
     V = EuclideanManifold(self.N)
     super().__init__(V)
 
-  def __contains__(self, p: Point) -> bool:
+  def contains(self, p: Point) -> bool:
     """Check if p is an invertible matrix
 
     Args:
@@ -275,7 +276,9 @@ class GLRn(GeneralLinearGroup):
       True if p is in the set, False otherwise.
     """
     shape_condition = p.shape == (self.N, self.N)
-    det_condition = jnp.linalg.slogdet(p)[1] > -1e5
+    det_condition = True
+    if util.GLOBAL_CHECK:
+      det_condition = jnp.linalg.slogdet(p)[1] > -1e5
     return shape_condition and det_condition
 
   def get_atlas(self) -> Atlas:
@@ -340,7 +343,7 @@ class GLp(GLRn):
   """
   Element = Matrix
 
-  def __contains__(self, p: Point) -> bool:
+  def contains(self, p: Point) -> bool:
     """Checks to see if p exists in this set.
 
     Args:
@@ -349,8 +352,11 @@ class GLp(GLRn):
     Returns:
       True if p is in the set, False otherwise.
     """
-    if super().__contains__(p) == False:
+    if super().contains(p) == False:
       return False
+
+    if util.GLOBAL_CHECK == False:
+      return True
     return jnp.linalg.slogdet(p)[0] > 0
 
 class OrthogonalGroup(GLRn):
@@ -361,7 +367,7 @@ class OrthogonalGroup(GLRn):
   """
   Element = Matrix
 
-  def __contains__(self, p: Point) -> bool:
+  def contains(self, p: Point) -> bool:
     """Checks to see if p exists in this set.
 
     Args:
@@ -370,9 +376,11 @@ class OrthogonalGroup(GLRn):
     Returns:
       True if p is in the set, False otherwise.
     """
-    if super().__contains__(p) == False:
+    if super().contains(p) == False:
       return False
 
+    if util.GLOBAL_CHECK == False:
+      return True
     return jnp.allclose(jnp.linalg.svd(p, compute_uv=False), 1.0)
 
   def get_lie_algebra(self) -> "LieAlgebra":
@@ -384,9 +392,11 @@ class OrthogonalGroup(GLRn):
     """
     from src.lie_algebra import SpaceOfMatrices
     class SpaceOfSkewSymmetricMatrices(SpaceOfMatrices):
-      def __contains__(self, p: Point) -> bool:
-        if super().__contains__(p) == False:
+      def contains(self, p: Point) -> bool:
+        if super().contains(p) == False:
           return False
+        if util.GLOBAL_CHECK == False:
+          return True
         return jnp.allclose(p, -p.T)
     return SpaceOfSkewSymmetricMatrices(dim=self.N)
 

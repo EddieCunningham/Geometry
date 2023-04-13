@@ -4,6 +4,7 @@ import src.util
 import jax.numpy as jnp
 import abc
 import src.util as util
+import copy
 
 __all__ = ["Point",
            "Coordinate",
@@ -31,8 +32,19 @@ class Set(abc.ABC):
     """
     pass
 
-  @abc.abstractmethod
   def __contains__(self, p: Point) -> bool:
+    """Checks to see if p exists in this set.
+
+    Args:
+      p: Test point.
+
+    Returns:
+      True if p is in the set, False otherwise.
+    """
+    return self.contains(p)
+
+  @abc.abstractmethod
+  def contains(self, p: Point) -> bool:
     """Checks to see if p exists in this set.
 
     Args:
@@ -43,6 +55,26 @@ class Set(abc.ABC):
     """
     return True
 
+  def intersect_with(self, other: "Set") -> "Set":
+    """Intersect this set with another set.
+
+    Args:
+      other: Another set.
+
+    Returns:
+      A shallow copy of this set with a new contains function.
+    """
+    instance = self
+    def new_contains(self, p: Point) -> bool:
+      in_self = instance.contains(p)
+      in_other = other.contains(p)
+      return in_self and in_other
+
+    # Create a shallow copy of this set and replace the contains method
+    new_set = copy.copy(self)
+    new_set.contains = new_contains.__get__(new_set)
+    return new_set
+
 class EmptySet(Set):
   """The empty set.  Nothing is included in this
 
@@ -50,7 +82,7 @@ class EmptySet(Set):
     membership_function: Function that determines membership.
   """
 
-  def __contains__(self, p: Point) -> bool:
+  def contains(self, p: Point) -> bool:
     """Checks to see if p exists in this set.
 
     Args:
@@ -92,6 +124,10 @@ class Reals(Set):
       membership_function: Function that determines membership.
     """
     self.dimension = dimension
+
+    from src.manifold import Chart, Atlas
+    self.chart = Chart(lambda x, inverse=False: x, domain=self, image=self)
+    self.atlas = Atlas([self.chart])
     super().__init__()
 
   def __str__(self) -> str:
@@ -102,7 +138,7 @@ class Reals(Set):
     """
     return f"{type(self)}(dimension={self.dimension})"
 
-  def __contains__(self, p: Coordinate) -> bool:
+  def contains(self, p: Coordinate) -> bool:
     """Checks to see if p exists in this set and is real.
 
     Args:
@@ -111,7 +147,7 @@ class Reals(Set):
     Returns:
       True if p is in the set and real, False otherwise.
     """
-    if isinstance(p, float) and self.dimension <= 1:
+    if isinstance(p, float) and ((self.dimension is None) or (self.dimension <= 1)):
       return True
 
     # Must be a coordinate type
@@ -133,7 +169,7 @@ class Reals(Set):
         elif p.shape[-1] != self.dimension:
           return False
 
-    return super().__contains__(p)
+    return super().contains(p)
 
   def __eq__(self, other: Set) -> bool:
     """Checks to see if another set is the set of reals.
@@ -173,8 +209,7 @@ class Reals(Set):
     Returns:
       The chart that contains p in its domain
     """
-    from src.manifold import Chart
-    return Chart(lambda x, inverse=False: x, domain=self, image=self)
+    return self.chart
 
 ################################################################################################################
 
@@ -194,7 +229,7 @@ class CartesianProductSet(Set):
     """
     self.sets = sets
 
-  def __contains__(self, p: Element) -> bool:
+  def contains(self, p: Element) -> bool:
     """Check if p is a cartesian product
 
     Args:
@@ -216,49 +251,3 @@ def set_cartesian_product(*sets: List[Set]) -> CartesianProductSet:
     Cartesian product of the sets
   """
   return CartesianProductSet(*sets)
-
-################################################################################################################
-
-# class CartesianProductSet(Set):
-#   """Set that is the cartesian product of 2 sets
-
-#   Attributes:
-#     membership_function: Function that determines membership.
-#   """
-#   Element = Tuple[Point,Point]
-
-#   def __init__(self, a: Set, b: Set):
-#     """Create the cartesian product of a and b
-
-#     Args:
-#       a: Set a
-#       b: Set b
-#     """
-#     self.set_a = a
-#     self.set_b = b
-
-#   def __contains__(self, p: Element) -> bool:
-#     """Check if p is a cartesian product
-
-#     Args:
-#       p: The input point
-
-#     Returns:
-#       Whether or not p is in the cartesian product
-#     """
-#     pa, pb = p
-#     return (pa in self.set_a) and (pb in self.set_b)
-
-# def set_cartesian_product(a: Set, b: Set) -> CartesianProductSet:
-#   """Make a set that has elements (a,b)
-
-#   Args:
-#     a: Set A
-#     b: Set B
-
-#   Returns:
-#     Cartesian product AxB
-#   """
-#   return CartesianProductSet(a, b)
-
-# ################################################################################################################

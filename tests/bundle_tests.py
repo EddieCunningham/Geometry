@@ -49,8 +49,16 @@ def tangent_bundle_tests():
   out = pi(v)
   assert all(jax.tree_util.tree_map(jnp.allclose, out, p))
 
+  # Check that pi is a submersion
+  dpi = pi.get_differential(v)
+  bundle_tangent_coords = random.normal(rng_key, (2*tangent_coords.shape[0],))
+  x_tangent = TangentVector(bundle_tangent_coords, TangentSpace(v, TM))
+  check = dpi(x_tangent)
+
+  assert pi.is_submersion(v)
+
   # Check that the local trivialization map works
-  Phi = TM.get_local_trivialization_map(v)
+  Phi = TM.get_local_trivialization_map(p)
   out = Phi(v)
 
   # Try getting the differential of the projection map
@@ -65,9 +73,6 @@ def tangent_bundle_tests():
   # Ensure that the differential mapped the tangent vector to the correct place
   check = dpi(vx)
   assert check.TpM.manifold == M
-
-  # Check that pi is a submersion
-  assert pi.is_submersion(v)
 
   # The global differential is a smooth bundle homomorphism covering F
   def _F(p, inverse=False):
@@ -153,7 +158,7 @@ def frame_bundle_tests():
   assert all(jax.tree_util.tree_map(jnp.allclose, out, p))
 
   # Check that the local trivialization map works
-  Phi = FB.get_local_trivialization_map(basis)
+  Phi = FB.get_local_trivialization_map(p)
   out = Phi(basis)
 
   # Check that pi is a submersion
@@ -164,7 +169,8 @@ def frame_bundle_tests():
 
     def right_action_map(self, g: Point, FB: FrameBundle) -> Map[TangentBasis,TangentBasis]:
       def theta_g(basis: TangentBasis) -> TangentBasis:
-        lt_map = FB.get_local_trivialization_map(basis)
+        p = FB.get_projection_map()(basis)
+        lt_map = FB.get_local_trivialization_map(p)
         p, mat = lt_map(basis)
         new_mat = mat@g
         return lt_map.inverse((p, new_mat))
@@ -184,7 +190,13 @@ def frame_bundle_tests():
 
   # Construct vector fields so that they output the correct shapes
   s1 = AutonomousFrame(get_chart_fun(M.dimension, k1), M)
-  s2 = AutonomousFrame(get_vector_field_fun(M.dimension, k2), M)
+  # s2 = AutonomousFrame(get_vector_field_fun(M.dimension, k2), M)
+
+  # Check the right action map of the frame bundle
+  right_action_map = s1.frame_bundle.get_right_action_map()
+  s2 = right_action_map((s1, g))
+
+
 
   def F_tilde(s):
     # The global differential is our bundle homomorphism

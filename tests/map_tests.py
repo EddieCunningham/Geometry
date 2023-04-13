@@ -67,19 +67,19 @@ def composition_test():
   """
 
   class A(Set):
-    def __contains__(self, p):
+    def contains(self, p):
       return isinstance(p, str)
 
   class B(Set):
-    def __contains__(self, p):
+    def contains(self, p):
       return isinstance(p, int)
 
   class C(Set):
-    def __contains__(self, p):
+    def contains(self, p):
       return isinstance(p, float)
 
   class D(Set):
-    def __contains__(self, p):
+    def contains(self, p):
       return isinstance(p, bool)
 
   def a_to_b(p):
@@ -109,19 +109,19 @@ def invertible_composition_test():
   """
 
   class A(Set):
-    def __contains__(self, p):
+    def contains(self, p):
       return isinstance(p, str)
 
   class B(Set):
-    def __contains__(self, p):
+    def contains(self, p):
       return isinstance(p, int)
 
   class C(Set):
-    def __contains__(self, p):
+    def contains(self, p):
       return isinstance(p, float)
 
   class D(Set):
-    def __contains__(self, p):
+    def contains(self, p):
       return isinstance(p, bool)
 
   def a_to_b(p, inverse=False):

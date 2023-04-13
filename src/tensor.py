@@ -611,7 +611,7 @@ class TensorBundle(FiberBundle):
     self.dimension = self.manifold.dimension**(self.type.k + self.type.l)
     super().__init__(M, EuclideanManifold(dimension=self.dimension))
 
-  def __contains__(self, x: Tensor) -> bool:
+  def contains(self, x: Tensor) -> bool:
     """Checks to see if x exists in the bundle.
 
     Args:
@@ -631,12 +631,30 @@ class TensorBundle(FiberBundle):
     """
     return Map(lambda v: v.p, domain=self, image=self.manifold)
 
+  def _local_trivialization_map(self, inpt: Union[Element,Tuple[Point,"Fiber"]], inverse: bool=False) -> Union[Tuple[Point,"Fiber"],Element]:
+    """Contains the actual implementation of the local trivialization.
+
+    Args:
+      inpt: Either an element of the fiber bundle or a tuple (point on manifold, fiber)
+
+    Returns:
+      Either a tuple (point on manifold, fiber) or an element of the fiber bundle
+    """
+    if inverse == False:
+      return inpt.p, inpt.xs
+    else:
+      p, xs = inpt
+    return Tensor(*xs, TkTpM=TensorSpace(p, self.tensor_type, self.manifold))
+
   def get_local_trivialization_map(self, T: Tensor) -> Map[Tensor,Tuple[Point,Coordinate]]:
     """Goes to the product space representation at p so that
     local_trivialization*proj_1 = self.pi.
+    This function is different than the rest and accepts an element of the
+    total space instead of the manifold!  This is because the tensor
+    coordinates might factor in a special way.
 
     Args:
-      p: A point on the base manifold
+      T: A tensor.
 
     Returns:
       A mapping from the bundle to a product bundle that is locally the same.
@@ -655,12 +673,6 @@ class TensorBundle(FiberBundle):
         p, xs = v
         return Tensor(*xs, TkTpM=TensorSpace(p, self.tensor_type, self.manifold))
     return Diffeomorphism(Phi, domain=self, image=image)
-
-  def get_atlas(self):
-    """Computations are done using local trivializations, so this
-    shouldn't matter.
-    """
-    return None
 
 ################################################################################################################
 

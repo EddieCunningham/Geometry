@@ -48,12 +48,12 @@ class Manifold(Set, abc.ABC):
   def get_atlas(self) -> "Atlas":
     """Construct the atlas for a manifold
 
-    Attributes:
+    Args:
       atlas: Atlas providing coordinate representation.
     """
     pass
 
-  def __contains__(self, p: Point) -> bool:
+  def contains(self, p: Point) -> bool:
     """Checks to see if p exists in the manifold.  This is the case if
        the point is in the domain of any chart
 
@@ -96,7 +96,7 @@ class Chart(Diffeomorphism):
     domain: A set that the input to map lives in.
     image: Where the map goes to.
   """
-  def __init__(self, phi: Callable[[Manifold],Reals], *, domain: Manifold, image: Reals=Reals()):
+  def __init__(self, phi: Callable[[Manifold],Reals], *, domain: Manifold, image: Reals):
     """Creates a new function.
 
     Args:
@@ -183,13 +183,10 @@ class Atlas(List[Chart]):
     Returns:
       A chart that contains p
     """
-    if util.GLOBAL_CHECK:
-      for c in self.charts:
-        if p in c.domain:
-          return c
-      assert 0, "p is not on manifold"
-
-    return self.charts[0]
+    for c in self.charts:
+      if p in c.domain:
+        return c
+    assert 0, "p is not on manifold"
 
 ################################################################################################################
 

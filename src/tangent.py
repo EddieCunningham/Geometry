@@ -36,6 +36,7 @@ class TangentVector(Vector):
       x: The coordinates of the vector in the basis induced by a chart.
       TpM: The tangent space that the vector lives on.
     """
+    assert x.shape[-1] == TpM.dimension
     super().__init__(x, TpM)
     self.TpM = TpM
 
@@ -337,10 +338,12 @@ class Frame(Section[Point,TangentBasis], abc.ABC):
       def __init__(self, frame):
         self.frame = frame
         super().__init__(frame.manifold)
-        self.frame_lt_map = self.frame.frame_bundle.get_local_trivialization_map(None)
-        self.coframe_lt_map = self.coframe_bundle.get_local_trivialization_map(None)
 
       def apply_to_point(self, p: Input) -> CotangentBasis:
+        # Get the local trivialization maps
+        self.frame_lt_map = self.frame.frame_bundle.get_local_trivialization_map(p)
+        self.coframe_lt_map = self.coframe_bundle.get_local_trivialization_map(p)
+
         # Get the frame at p
         Ep = self.frame.apply_to_point(p)
 

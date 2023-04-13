@@ -231,7 +231,8 @@ def get_infinitesmal_generator_map(G: LieGroup, M: Manifold, right_action: Optio
         return flow.infinitesmal_generator(p)
 
     return InfinitesmalGeneratorVectorField(M)
-  return Map(theta_hat, domain=G.get_lie_algebra(), image=TangentBundle(M))
+  return Map(theta_hat, domain=G.get_lie_algebra(), image=SpaceOfVectorFields(M))
+  # return Map(theta_hat, domain=G.get_lie_algebra(), image=TangentBundle(M))
 
 ################################################################################################################
 

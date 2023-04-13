@@ -126,7 +126,7 @@ class CotangentSpace(VectorSpace):
       point_same = jax.tree_util.tree_all(jax.tree_util.tree_map(jnp.allclose, self.p, other.p))
     return point_same and (self.manifold == other.manifold)
 
-  def __contains__(self, v: CotangentVector) -> bool:
+  def contains(self, v: CotangentVector) -> bool:
     """Checks to see if p exists in the manifold.  This is the case if
        the point is in the domain of any chart
 
@@ -207,7 +207,8 @@ class CotangentBasis(VectorSpaceBasis):
     # First use a local trivialization of the tangent bundle at the basis
     # in order to get the matrix representation of the basis
     frame_bundle = FrameBundle(TpM.manifold)
-    lt_map = frame_bundle.get_local_trivialization_map(tangent_basis)
+    p = frame_bundle.get_projection_map()(tangent_basis)
+    lt_map = frame_bundle.get_local_trivialization_map(p)
     p, matrix = lt_map(tangent_basis)
 
     # Invert
@@ -216,7 +217,7 @@ class CotangentBasis(VectorSpaceBasis):
     # Now use a local trivialization of the coframe bundle to go to
     # the cotangent basis
     coframe_bundle = CoframeBundle(TpM.manifold)
-    co_lt_map = coframe_bundle.get_local_trivialization_map(p) # TODO: Whats the right thing to pass in here?
+    co_lt_map = coframe_bundle.get_local_trivialization_map(p)
     return co_lt_map.inverse((p, inv_matrix))
 
 ################################################################################################################
@@ -516,10 +517,12 @@ class Coframe(Section[Point,CotangentBasis], abc.ABC):
       def __init__(self, coframe):
         self.coframe = coframe
         super().__init__(coframe.manifold)
-        self.frame_lt_map = self.frame_bundle.get_local_trivialization_map(None)
-        self.coframe_lt_map = self.coframe.coframe_bundle.get_local_trivialization_map(None)
 
       def apply_to_point(self, p: Input) -> TangentBasis:
+        # Get the local trivialization maps
+        self.frame_lt_map = self.frame_bundle.get_local_trivialization_map(p)
+        self.coframe_lt_map = self.coframe.coframe_bundle.get_local_trivialization_map(p)
+
         # Get the frame at p
         ep = self.coframe.apply_to_point(p)
 

@@ -62,11 +62,9 @@ class Map(Generic[Input,Output]):
     Returns:
       f(p)
     """
-    if util.GLOBAL_CHECK:
-      assert p in self.domain
+    assert p in self.domain
     q = self.f(p)
-    if util.GLOBAL_CHECK:
-      assert q in self.image
+    assert q in self.image
     return q
 
   def get_coordinate_map(self, p: Input) -> "Map":
@@ -308,7 +306,7 @@ class MultlinearMap(LinearMap[List[Input],Output]):
   """
   pass
 
-class IdentityMap(Map[Input,Output]):
+class IdentityMap(LinearMap[Input,Output]):
   """The identity map
 
   Attributes:
@@ -322,13 +320,8 @@ class IdentityMap(Map[Input,Output]):
       image: Must be a set of Real numbers.
     """
     self.manifold = manifold
-
     def f(x, inverse=False):
-      if inverse == False:
-        return x.ravel()
-      else:
-        return x.reshape()
-
+      return x
     super().__init__(lambda x: x, domain=manifold, image=manifold)
 
 class ProjectionMap(Map[Tuple[Point],Point]):
@@ -361,7 +354,7 @@ class Function(Map[Input,Output]):
     domain: A set that the input to map lives in.
     image: Where the map goes to.
   """
-  def __init__(self, f: Callable[[Reals],Reals], domain: Reals=Reals(), image: Reals=Reals()):
+  def __init__(self, f: Callable[[Reals],Reals], domain: Reals, image: Reals):
     """Creates a new function.
 
     Args:
@@ -396,11 +389,9 @@ class _InvertibleMixin():
     Returns:
       f^{-1}(q)
     """
-    if util.GLOBAL_CHECK:
-      assert q in self.image
+    assert q in self.image
     p = self.f(q, inverse=True)
-    if util.GLOBAL_CHECK:
-      assert p in self.domain
+    assert p in self.domain
     return p
 
 class InvertibleFunction(Function[Input,Output], _InvertibleMixin):

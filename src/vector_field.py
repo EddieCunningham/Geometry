@@ -14,9 +14,23 @@ from src.section import *
 from src.bundle import *
 import src.util as util
 
-__all__ = ["TimeDependentVectorField",
+__all__ = ["SpaceOfVectorFields",
+           "TimeDependentVectorField",
            "PushforwardVectorField",
            "pushforward"]
+
+################################################################################################################
+
+class SpaceOfVectorFields(Set):
+
+  Element = VectorField
+
+  def __init__(self, M: Manifold):
+    self.manifold = M
+
+  def contains(self, p: VectorField) -> bool:
+    assert isinstance(p, VectorField)
+    return p.manifold == self.manifold
 
 ################################################################################################################
 

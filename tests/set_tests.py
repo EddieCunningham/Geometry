@@ -35,8 +35,8 @@ def reals_subset_test():
   """
 
   class CustomSet(Reals):
-    def __contains__(self, x):
-      if super().__contains__(x):
+    def contains(self, x):
+      if super().contains(x):
         if jnp.sum(x**2) < 1.0:
           return True
       return False
@@ -47,6 +47,44 @@ def reals_subset_test():
   assert x not in U
   assert x*0 in U
 
+def set_intersect_test():
+
+  class CustomSet1(Reals):
+    def contains(self, x):
+      if super().contains(x):
+        if jnp.sqrt(jnp.sum(x**2)) < 1.0:
+          return True
+      return False
+
+  class CustomSet2(Reals):
+    def contains(self, x):
+      if super().contains(x):
+        if jnp.any(x < 0):
+          return False
+        else:
+          return True
+      return False
+
+  x = jnp.array([0.1, 0.6, 0.2])
+  y = jnp.array([0.1, -0.6, 0.2])
+  z = jnp.array([0.1, 10.6, 0.2])
+
+  A = CustomSet1(dimension=3)
+  B = CustomSet2(dimension=3)
+  C = A.intersect_with(B)
+
+  assert x in A
+  assert x in B
+  assert x in C
+
+  assert y in A
+  assert y not in B
+  assert y not in C
+
+  assert z not in A
+  assert z in B
+  assert z not in C
+
 ################################################################################################################
 
 def run_all():
@@ -54,6 +92,7 @@ def run_all():
   reals_test()
   reals_dimension_test()
   reals_subset_test()
+  set_intersect_test()
 
 if __name__ == "__main__":
   from debug import *
