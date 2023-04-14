@@ -431,37 +431,52 @@ class FrameBundle(FiberBundle, abc.ABC):
     dim = self.manifold.dimension
     return fiber_after_trivialization.reshape((dim, dim))
 
-  def get_right_action_map(self) -> Map[Tuple[Frame,Point],Frame]:
+  def get_action_map(self, *, right: bool) -> Map[Tuple[Frame,Point],Frame]:
     """The right action map of G on M.  This is set to
        a translation map by default.
 
     Args:
-      g: An element of the Lie group
-      M: The manifold to apply an action on
+      right: Use a right action if true otherwise left action
 
     Returns:
-      theta_g
+      theta
     """
     def theta(Fg: Tuple[Frame,InvertibleMatrix]) -> Frame:
+
       class TransformedFrame(Frame):
 
-        def __init__(self, F: Frame, g: InvertibleMatrix):
+        def __init__(self, F: Frame, g: InvertibleMatrix, right: bool):
           self.F = F
           self.g = g
+          self.right = right
           super().__init__(F.manifold)
 
         def apply_to_point(self, p: Point) -> TangentBasis:
           lt = self.F.frame_bundle.get_local_trivialization_map(p)
           basis = self.F(p)
           p, basis_as_matrix = lt(basis)
-          new_basis_as_matrix = basis_as_matrix@self.g
+          if self.right:
+            new_basis_as_matrix = basis_as_matrix@self.g
+          else:
+            new_basis_as_matrix = self.g@basis_as_matrix
+
           new_basis = lt.inverse((p, new_basis_as_matrix))
           return new_basis
 
-      F, g = Fg
-      return TransformedFrame(F, g)
+      if right:
+        F, g = Fg
+      else:
+        g, F = Fg
 
-    domain = CartesianProductManifold(self, GLRn(dim=self.manifold.dimension))
+      assert isinstance(F, Frame)
+      assert isinstance(right, bool)
+
+      return TransformedFrame(F, g, right)
+
+    if right:
+      domain = CartesianProductManifold(self, GLRn(dim=self.manifold.dimension))
+    else:
+      domain = CartesianProductManifold(GLRn(dim=self.manifold.dimension), self)
     return Map(theta, domain=domain, image=self)
 
 ################################################################################################################

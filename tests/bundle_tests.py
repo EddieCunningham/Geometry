@@ -19,6 +19,9 @@ from src.instances.manifolds import *
 from src.instances.lie_groups import *
 import src.util as util
 from tests.cotangent_tests import get_chart_fun
+from tests.vector_field_tests import get_vector_field_fun
+from src.instances.vector_fields import AutonomousFrame
+from src.instances.vector_fields import AutonomousVectorField
 
 ################################################################################################################
 
@@ -242,10 +245,80 @@ def frame_bundle_tests():
   for i, (Xp, Yp) in enumerate(zip(s1p, s1p_reconstr)):
     assert jnp.allclose(Xp.x, Yp.x)
 
+################################################################################################################
+
+def frame_bundle_tests_2():
+  jax.config.update("jax_enable_x64", True)
+  from tests.manifold_tests import get_random_point
+  # jax.config.update('jax_disable_jit', True)
+
+  rng_key = random.PRNGKey(0)
+  k1, k2, k3 = random.split(rng_key, 3)
+
+  # Get a point on the manifold
+  M = EuclideanGroup(dim=4)
+  bA, *tangent_coords = random.normal(rng_key, (21, 4, 5))
+  tangent_coords = [x.ravel() for x in tangent_coords]
+  b, A = bA[:,-1], bA[:,:-1]
+  A, _ = jnp.linalg.qr(A)
+  p = (b, A)
+
+  # Proposition 2.11 of https://data.math.au.dk/publications/ln/2003/imf-ln-2003-69.pdf
+  x = AutonomousFrame(get_chart_fun(M.dimension, k1), M)
+  y = AutonomousFrame(get_chart_fun(M.dimension, k2), M)
+  g = random.normal(k2, (M.dimension, M.dimension))
+  g_inv = jnp.linalg.inv(g)
+  s = AutonomousVectorField(get_vector_field_fun(M.dimension, k3), M)
+
+  sp = s(p)
+  xp = x(p)
+
+  # Check that we can apply a basis to a real vector
+  v = random.normal(rng_key, (M.dimension,))
+  test1 = xp(v)
+  test2 = xp.call_unvectorized(v)
+  assert jnp.allclose(test1.x, test2.x)
+
+  v_reconstr = xp.inverse(test1)
+  assert jnp.allclose(v, v_reconstr)
+
+  def _s_tilde(x: Frame) -> Coordinate:
+    xp = x(p)
+    return xp.inverse(sp) # In R^n
+
+  s_tilde = Map(_s_tilde, domain=x.frame_bundle, image=EuclideanManifold(dimension=M.dimension))
+
+  # Check that s_tilde is right-left equivariant
+  theta_right = x.frame_bundle.get_action_map(right=True)
+  theta_left = x.frame_bundle.get_action_map(right=False)
+
+  # s_tilde(x*g) = g^{-1}s_tilde(x)
+  xg = theta_right((x, g))
+  test1 = s_tilde(xg)
+
+  s_hatx = s_tilde(x)
+  test2 = g_inv@s_hatx
+  assert jnp.allclose(test1, test2)
+
+  # s_bar is constant on every orbit of F(V_p), so it defines a function
+  # s: M -> V.
+  def _s_bar(x: Frame) -> TangentVector:
+    xp = x(p)
+    return xp(s_tilde(x))
+
+  s_bar = Map(_s_bar, domain=x.frame_bundle, image=xp.TpM)
+  test1 = s_bar(x)
+  test2 = s_bar(y)
+
+  assert jnp.allclose(test1.x, test2.x)
+  assert jnp.allclose(test1.x, sp.x)
+
+  import pdb; pdb.set_trace()
 
 def run_all():
-  tangent_bundle_tests()
-  frame_bundle_tests()
+  # tangent_bundle_tests()
+  # frame_bundle_tests()
+  frame_bundle_tests_2()
 
 if __name__ == "__main__":
   from debug import *

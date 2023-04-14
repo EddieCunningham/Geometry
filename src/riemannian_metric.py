@@ -20,20 +20,156 @@ import einops
 import itertools
 import abc
 import math
+import copy
 
-__all__ = ["SymmetrizedTensor",
-           "symmetrize",
+__all__ = ["SymmetricTensor",
+           "SymmetricTensorSpace",
+           "TensorToSymmetricTensor",
+           "make_symmetric",
            "symmetric_product",
-           "SymmetrizedTensorField",
+           "SymmetricTensorBundle",
+           "SymmetricTensorField",
+           "TensorFieldToSymmetricTensorField",
            "symmetrize_tensor_field",
            "RiemannianMetric",
            "EuclideanMetric",
            "RiemannianManifold",
+           "make_riemannian_manifold",
            "TangentToCotangetBundleIsomorphism",
            "CotangentToTangetBundleIsomorphism",
-           "gradient_vector_field"]
+           "gradient_vector_field",
+           "gram_schmidt",
+           "OrthogonalFrameBundle"]
 
-class SymmetrizedTensor(Tensor):
+class SymmetricTensor(Tensor):
+  """A symmetric tensor
+
+  Attributes:
+    x: The coordinates of the vector in the basis induced by a chart.
+    TkTpM: The space of mixed type tensors that this tensor lives on
+  """
+  def __init__(self, *x: Coordinate, TkTpM: "SymmetricTensorSpace"):
+    """Creates a new tensor.
+
+    Args:
+      xs: A list of independent coordinates to make tensor
+      TkTpM: The tangent space that the tensor lives on.
+    """
+    assert isinstance(TkTpM, SymmetricTensorSpace)
+    self.xs = x
+    self.TkTpM = TkTpM
+    self.manifold = self.TkTpM.manifold
+    self.phi = self.TkTpM.phi
+    self.phi_inv = self.phi.get_inverse()
+    self.p = self.TkTpM.p
+    self.type = self.TkTpM.type
+
+    self.contract = self.TkTpM.get_coordinate_indices()
+
+  def get_dense_coordinates(self) -> Coordinate:
+    """Get the coordinates associated with this tensor
+
+    Returns:
+      A single array with the coordinates
+    """
+    # Loop over all permutations of k basis vectors.  Each permutation
+    # corresponds to an entry of the coordinate array.
+    TpM = TangentSpace(self.p, self.manifold)
+    basis = TpM.get_basis()
+
+    coords = jnp.zeros([self.manifold.dimension]*self.type.l)
+
+    for iterate in itertools.product(enumerate(basis), repeat=self.type.l):
+      index, Xs = list(zip(*iterate))
+      out = self(*Xs)
+      coords = coords.at[tuple(index)].set(out)
+
+    return coords
+
+  def __rmul__(self, a: float) -> "SymmetricTensor":
+    """Multiply the tensor by a scalar
+
+    Args:
+      a: A scalar
+
+    Returns:
+      (aX)_p
+    """
+    assert a in Reals(dimension=1)
+    xs = (self.xs[0]*a,) + self.xs[1:]
+    return SymmetricTensor(*xs, TkTpM=self.TkTpM)
+
+  def __add__(self, Y: "SymmetricTensor") -> "SymmetricTensor":
+    """Add two tensors together.
+
+    Args:
+      Y: Another tensor
+
+    Returns:
+      Xp + Yp
+    """
+    # Must be the same type
+    if isinstance(Y, CotangentVector):
+      Y = as_tensor(Y)
+    assert isinstance(Y, SymmetricTensor)
+    assert self.type == Y.type
+    x_coords = self.get_dense_coordinates()
+    y_coords = Y.get_coordinates(self.phi)
+
+    # Need to create a new tensor space to get the correct
+    # contraction indices
+    TkTpM = SymmetricTensorSpace(self.p, self.type, self.manifold)
+    return SymmetricTensor(x_coords + y_coords, TkTpM=TkTpM)
+
+################################################################################################################
+
+class SymmetricTensorSpace(TensorSpace):
+  """The space of Symmetric tensors
+
+  Attributes:
+    p: The point where the space lives.
+    contract: Tells us what types of objects this tensor accepts
+    M: The manifold.
+  """
+  Element = SymmetricTensor
+
+  def __init__(self, p: Point, tensor_type: TensorType, M: Manifold):
+    """Creates a new space of mixed tensors on the tangent bundle
+
+    Args:
+      p: The point where the space lives.
+      type: The tensor type (k,l)
+      M: The manifold.
+    """
+    assert isinstance(tensor_type, TensorType)
+    assert tensor_type.k == 0 # Only has covariant tensors
+    self.p = p
+    self.type = tensor_type
+    self.manifold = M
+
+    # Basis elements have indices of increasing value
+    import scipy
+    self.dimension = scipy.special.comb(self.manifold.dimension + self.type.l - 1, self.type.l, exact=True)
+
+    # Keep track of the chart function for the manifold
+    self.phi = self.manifold.get_chart_for_point(self.p)
+
+    VectorSpace.__init__(self, dimension=self.dimension)
+
+  def get_atlas(self):
+    """Return the atlas
+
+    Returns:
+      Atlas object
+    """
+    def chart_fun(v, inverse=False):
+      assert 0, "Need to implement"
+    self.chart = Chart(chart_fun, domain=self, image=Reals(dimension=self.dimension))
+    return Atlas([self.chart])
+
+################################################################################################################
+
+class TensorToSymmetricTensor(SymmetricTensor):
   """The symmetrization of a tensor
 
   Attributes:
@@ -67,7 +203,7 @@ class SymmetrizedTensor(Tensor):
     x /= math.factorial(self.T.type.l)
 
     # Create a new tensor space here
-    sym_TkTpM = TensorSpace(self.T.p, self.T.type, self.T.TkTpM.manifold)
+    sym_TkTpM = SymmetricTensorSpace(self.T.p, self.T.type, self.T.TkTpM.manifold)
     super().__init__(x, TkTpM=sym_TkTpM)
 
   def call_unvectorized(self, *Xs: List[TangentVector]) -> Coordinate:
@@ -87,7 +223,7 @@ class SymmetrizedTensor(Tensor):
     out /= k_factorial
     return out
 
-def symmetrize(T: Tensor):
+def make_symmetric(T: Tensor):
   """Symmetrize a tensor.
 
   Args:
@@ -96,7 +232,7 @@ def symmetrize(T: Tensor):
   Returns:
     Symmetric version of T
   """
-  return SymmetrizedTensor(T)
+  return TensorToSymmetricTensor(T)
 
 def symmetric_product(a: Tensor, b: Tensor):
   """Symmetric product of 2 tensors
@@ -113,11 +249,96 @@ def symmetric_product(a: Tensor, b: Tensor):
   if isinstance(b, CotangentVector):
     b = as_tensor(b)
 
-  return symmetrize(tensor_product(a, b))
+  return make_symmetric(tensor_product(a, b))
 
 ################################################################################################################
 
-class SymmetrizedTensorField(TensorField, abc.ABC):
+class SymmetricTensorBundle(TensorBundle):
+  """Bundle of Symmetric covariant k-tensor bundle
+
+  Attributes:
+    M: The manifold.
+  """
+  Element = Tensor # The tensor is evaluated at p!
+
+  def __init__(self, tensor_type: TensorType, M: Manifold):
+    """Creates a new tensor bundle
+
+    Args:
+      type: The tensor type (0,k)
+      M: The manifold.
+    """
+    assert tensor_type.k == 0 # Covariant only
+
+    # The fiber of a tensor bundle is a tensor
+    self.manifold = M
+    self.type = tensor_type
+    import scipy
+    self.dimension = scipy.special.comb(self.manifold.dimension + self.type.l - 1, self.type.l, exact=True)
+    FiberBundle.__init__(self, M, EuclideanManifold(dimension=self.dimension))
+
+  def contains(self, x: Tensor) -> bool:
+    """Checks to see if x exists in the bundle.
+
+    Args:
+      x: Test point.
+
+    Returns:
+      True if p is in the bundle, False otherwise.
+    """
+    return x.manifold == self.manifold
+
+  def get_projection_map(self) -> Map[Tensor,Point]:
+    """Get the projection map that goes from the total space
+    to the base space
+
+    Returns:
+      The map x -> p, x in E, p in M
+    """
+    return Map(lambda v: v.p, domain=self, image=self.manifold)
+
+  def _local_trivialization_map(self, inpt: Union[Element,Tuple[Point,"Fiber"]], inverse: bool=False) -> Union[Tuple[Point,"Fiber"],Element]:
+    """Contains the actual implementation of the local trivialization.
+
+    Args:
+      inpt: Either an element of the fiber bundle or a tuple (point on manifold, fiber)
+
+    Returns:
+      Either a tuple (point on manifold, fiber) or an element of the fiber bundle
+    """
+    if inverse == False:
+      return inpt.p, inpt.xs
+    else:
+      p, xs = inpt
+    return SymmetricTensor(*xs, TkTpM=SymmetricTensorSpace(p, self.tensor_type, self.manifold))
+
+  def get_local_trivialization_map(self, T: SymmetricTensor) -> Map[SymmetricTensor,Tuple[Point,Coordinate]]:
+    """Goes to the product space representation at p so that
+    local_trivialization*proj_1 = self.pi.
+
+    Args:
+      p: A point on the base manifold
+
+    Returns:
+      A mapping from the bundle to a product bundle that is locally the same.
+    """
+    assert isinstance(T, SymmetricTensor)
+
+    assert 0, "Need to figure out if this changes for Symmetric tensors"
+    product_dimensions = [x.size for x in T.xs]
+    Ms = [EuclideanManifold(dimension=dim) for dim in product_dimensions]
+    fiber = manifold_carteisian_product(*Ms)
+
+    image = ProductBundle(self.manifold, fiber)
+    def Phi(v, inverse=False):
+      if inverse == False:
+        return v.p, v.xs
+      else:
+        p, xs = v
+        return SymmetricTensor(*xs, TkTpM=SymmetricTensorSpace(p, self.tensor_type, self.manifold))
+    return Diffeomorphism(Phi, domain=self, image=image)
+
+class SymmetricTensorField(TensorField, abc.ABC):
   """The symmetrization of a tensor field.  This will have a non symmetric tensor
   field that we will just symmetrize when calling this tensor.
 
@@ -132,39 +353,98 @@ class SymmetrizedTensorField(TensorField, abc.ABC):
       type: The tensor type (k,l)
       M: The base manifold.
     """
-    return super().__init__(tensor_type, M)
+    assert tensor_type.k == 0
+    self.type = tensor_type
+    self.manifold = M
 
-  @property
-  @abc.abstractmethod
-  def T(self) -> TensorField:
-    """The non-symmetric tensor field that we'll use to construct
-    a symmetric tensor field
+    # Construct the bundle
+    domain = M
+    image = SymmetricTensorBundle(tensor_type, M)
+    pi = ProjectionMap(idx=0, domain=image, image=domain)
+    Section.__init__(self, pi)
 
-    Returns:
-      A tensor field object
-    """
-    pass
-
-  def apply_to_co_vector_fields(self, *Xs: List[Union[VectorField,CovectorField]]) -> Map:
-    """Evaluate the tensor field on (co)vector fields
+  def __call__(self, *x: Union[Point,VectorField]) -> Union[Map,SymmetricTensor]:
+    """Evaluate the tensor field at a point, or evaluate it on vector fields
 
     Args:
-      Xs: A list of (co)vector fields
+      Xs: Either a point or a list of vector fields
+
+    Returns:
+      Tensor at a point, or a map over the manifold
+    """
+    if isinstance(x[0], VectorField):
+      return self.apply_to_co_vector_fields(*x)
+    else:
+      p = x[0]
+      if util.GLOBAL_CHECK:
+        assert p in self.manifold
+      return self.apply_to_point(p)
+
+  def apply_to_co_vector_fields(self, *Xs: List[VectorField]) -> Map:
+    """Evaluate the tensor field on vector fields
+
+    Args:
+      Xs: A list of vector fields
 
     Returns:
       A map over the manifold
     """
     def fun(p: Point):
-      out = 0.0
-      for Xs_perm in itertools.permutations(Xs):
-        out += self.T.apply_to_co_vector_fields(*Xs_perm)
-
-      k_factorial = math.factorial(len(Xs))
-      out /= k_factorial
-      return out
+      return self(p)(*[X(p) for X in Xs])
     return Map(fun, domain=self.manifold, image=Reals())
 
-  def apply_to_point(self, p: Point) -> Tensor:
+  @abc.abstractmethod
+  def apply_to_point(self, p: Point) -> SymmetricTensor:
+    """Evaluate the tensor field at a point.
+
+    Args:
+      p: Point on the manifold.
+
+    Returns:
+      Tensor at p.
+    """
+    pass
+
+################################################################################################################
+
+class TensorFieldToSymmetricTensorField(SymmetricTensorField, abc.ABC):
+  """The symmetrization of a tensor field.  This will have a non Symmetric tensor
+  field that we will just alternate when calling this tensor.
+
+  Attributes:
+    type: The type of the tensor field
+    M: The manifold that the tensor field is defined on
+  """
+  def __init__(self, T: TensorField, tensor_type: TensorType, M: Manifold):
+    """Creates a new tensor field.
+
+    Args:
+      type: The tensor type (k,l)
+      M: The base manifold.
+    """
+    self.T = T
+    return super().__init__(tensor_type, M)
+
+  def apply_to_co_vector_fields(self, *Xs: List[VectorField]) -> Map:
+    """Evaluate the tensor field on vector fields
+
+    Args:
+      Xs: A list of vector fields
+
+    Returns:
+      A map over the manifold
+    """
+    # Construct the tensor field
+    output_map = None
+    for i, Xs_perm in itertools.permutations(Xs):
+      term = self.T.apply_to_co_vector_fields(*Xs_perm)
+      output_map = term if output_map is None else output_map + term
+
+    k_factorial = 1/math.factorial(len(Xs))
+    output_map *= k_factorial
+    return output_map
+
+  def apply_to_point(self, p: Point) -> SymmetricTensor:
     """Evaluate the tensor field at a point.
 
     Args:
@@ -174,26 +454,22 @@ class SymmetrizedTensorField(TensorField, abc.ABC):
       Tensor at p.
     """
     Tp = self.T.apply_to_point(p)
-    return symmetrize(Tp)
+    return make_symmetric(Tp)
 
 def symmetrize_tensor_field(T: TensorField):
-  """Symmetrize a tensor field.
+  """Alternate a tensor field.
 
   Args:
-    T: Tensor field to symmetrize
+    T: Tensor field to alternate
 
   Returns:
     Symmetric version of T
   """
-  class SymmetrizedFromInputTensorField(SymmetrizedTensorField):
-    @property
-    def T(self):
-      return T
-  return SymmetrizedFromInputTensorField(T.type, T.manifold)
+  return TensorFieldToSymmetricTensorField(T, T.type, T.manifold)
 
 ################################################################################################################
 
-class RiemannianMetric(SymmetrizedTensorField):
+class RiemannianMetric(SymmetricTensorField):
   """A riemannian metric is a symmetric covariant 2-tensor field
 
   Attributes:
@@ -228,12 +504,6 @@ class EuclideanMetric(RiemannianMetric):
     M = EuclideanManifold(dimension, chart=coordinate_function)
     super().__init__(M)
 
-  @property
-  def T(self) -> TensorField:
-    """Don't actually need this
-    """
-    assert 0, "Shouldn't be calling this"
-
   def apply_to_co_vector_fields(self, *Xs: List[Union[VectorField,CovectorField]]) -> Map:
     """Evaluate the tensor field on (co)vector fields
 
@@ -260,8 +530,8 @@ class EuclideanMetric(RiemannianMetric):
     coords = jnp.eye(self.manifold.dimension)
 
     # Construct the tangent covector
-    TkTpM = TensorSpace(p, self.type, self.manifold)
-    return Tensor(coords, TkTpM=TkTpM)
+    TkTpM = SymmetricTensorSpace(p, self.type, self.manifold)
+    return SymmetricTensor(coords, TkTpM=TkTpM)
 
 ################################################################################################################
 
@@ -293,8 +563,31 @@ class RiemannianManifold(Manifold):
     Returns:
       <Xp,Yp>_g
     """
-    gp = self.g(X.p)
+    gp = self.g(Xp.p)
     return gp(Xp, Yp)
+
+def make_riemannian_manifold(M: Manifold, g: RiemannianMetric) -> RiemannianManifold:
+  """Create a Riemannian manifold from an existing manifold and a metric over it.
+
+  Args:
+    M: A manifold
+    g: A Riemannian metric
+
+  Returns:
+    Riemannian manifold
+  """
+  assert g.manifold == M
+
+  # Create a deep copy of the input manifold instance
+  riemannian_manifold = copy.copy(M)
+
+  # Change the class of the copied object to RiemannianManifold
+  riemannian_manifold.__class__ = RiemannianManifold
+
+  # Set the Riemannian metric
+  riemannian_manifold.g = g
+
+  return riemannian_manifold
 
 ################################################################################################################
 
@@ -493,3 +786,88 @@ def gradient_vector_field(f: Map[Point,Coordinate], g: RiemannianMetric):
   """
   df = FunctionDifferential(f)
   return CotangentToTangetBundleIsomorphism(g).apply_to_covector_field(df)
+
+################################################################################################################
+
+def gram_schmidt(tangent_basis: TangentBasis, g: RiemannianMetric):
+  """Orthogonalize the basis vectors using the Gram-Schmidt algorithm
+
+  Args:
+    tangent_basis: A basis for the tangent space
+    g: A Riemannian metric for the manifold
+
+  Returns:
+    An orthogonalized basis
+  """
+  TpM = tangent_basis.TpM
+  p = TpM.p
+  gp = g(p)
+
+  metric_coordinates = gp.get_dense_coordinates()
+
+  # Go to Euclidean coordinates
+  L = jnp.linalg.cholesky(metric_coordinates).T # L.T@L = metric_coordinates
+
+  # Get the coordinates of the basis vectors in terms of the metric's coordinate function
+  J = jnp.stack([v.get_coordinates(gp.phi) for v in tangent_basis.basis], axis=1)
+
+  # Transform the tangent vector coordinates to Euclidean coordinates
+  transformed_J = L@J
+
+  # Do Gram Schmidt
+  Q, _ = jnp.linalg.qr(transformed_J)
+
+  # Go back to the coordinates that the metric uses
+  new_mat = jnp.linalg.solve(L, Q)
+
+  # Return the new basis
+  new_coords = jnp.split(new_mat, TpM.manifold.dimension, axis=1)
+  return TangentBasis([TangentVector(x.ravel(), TpM) for x in new_coords], TpM)
+
+################################################################################################################
+
+class OrthogonalFrameBundle(FrameBundle):
+  """Frame bundle.  Represents the space of frames that
+  we can have over a manifold.
+
+  Attributes:
+    M: The manifold.
+  """
+  Element = TangentBasis # Every element is a basis for the tangent space
+
+  def __init__(self, M: RiemannianManifold):
+    """Creates a new frame bundle.
+
+    Args:
+      M: The manifold.
+    """
+    self.g = M.g
+    assert isinstance(M, RiemannianManifold)
+    from src.instances.lie_groups import OrthogonalGroup
+    FiberBundle.__init__(self, M, OrthogonalGroup(dim=M.dimension))
+
+  def contains(self, x: TangentBasis) -> bool:
+    """Checks to see if x exists in the bundle.
+
+    Args:
+      x: Test point.
+
+    Returns:
+      True if p is in the bundle, False otherwise.
+    """
+    out = True
+    for i, Xp in enumerate(x.basis):
+      for j, Yp in enumerate(x.basis):
+        inner = self.manifold.inner_product(Xp, Yp)
+        if util.GLOBAL_CHECK:
+          if i == j:
+            out = out and jnp.allclose(inner, 1.0)
+          else:
+            out = out and jnp.allclose(inner, 0.0)
+        if out == False:
+          import pdb; pdb.set_trace()
+
+    out = x.TpM.manifold == self.manifold
+    if out == False:
+      import pdb; pdb.set_trace()
+    return out

@@ -30,16 +30,11 @@ def symmetrize_tests():
   M = Sphere(dim=4)
   p = random.normal(rng_key, (M.dimension + 1,)); p = p/jnp.linalg.norm(p)
 
-  # First build a tensor
-  tensor_type = TensorType(3, 3)
-  tensor_coords = random.normal(rng_key, [4]*sum(tensor_type))
-  TkTpM = TensorSpace(p, tensor_type, M)
-  T = Tensor(tensor_coords, TkTpM=TkTpM)
-
   # Evaluate it on some cotangent and tangent vectors
-  coords = random.normal(rng_key, (sum(tensor_type), M.dim))
+  coords = random.normal(rng_key, (3, M.dim))
   coTpM = CotangentSpace(p, M)
-  ws = [CotangentVector(x, coTpM) for x in coords[:tensor_type.k]]
+  w1, w2, w3 = [CotangentVector(x, coTpM) for x in coords]
+  w1w2w3 = tensor_product(tensor_product(w1, w2), w3)
 
   # Now try a tensor product
   rng_key, _ = random.split(rng_key, 2)
@@ -49,11 +44,8 @@ def symmetrize_tests():
   v2 = TangentVector(tangent_coords[1], TpM)
   v3 = TangentVector(tangent_coords[2], TpM)
 
-  w1, w2, w3 = ws[:3]
-  w1w2w3 = tensor_product(tensor_product(w1, w2), w3)
-
   # Check symmetrization
-  SymT = symmetrize(w1w2w3)
+  SymT = make_symmetric(w1w2w3)
   out1 = SymT(v1, v2, v3)
   out2 = SymT(v1, v3, v2)
   out3 = SymT(v2, v1, v3)
@@ -172,11 +164,43 @@ def gradient_tests():
 
 ################################################################################################################
 
+def orthogonal_frame_bundle_tests():
+  # Page 14 of https://data.math.au.dk/publications/ln/2003/imf-ln-2003-69.pdf
+
+  rng_key = random.PRNGKey(0)
+
+  # Construct a manifold
+  M = Sphere(dim=4)
+  p = random.normal(rng_key, (5,)); p = p/jnp.linalg.norm(p)
+
+  # Create a Riemannian metric
+  tf = get_tensor_field_fun(M, TensorType(0, 2), rng_key)
+  g = ParametricRiemannianMetric(tf, M)
+
+  # Create the Riemannian manifold
+  M = make_riemannian_manifold(M, g)
+
+  # Create an orthogonal frame bundle over the Riemannian manifold
+  FO = OrthogonalFrameBundle(M)
+
+  # Create a basis for the tangent space
+  TpM = TangentSpace(p, M)
+  tangent_coords = random.normal(rng_key, (M.dimension, M.dimension))
+  basis = [TangentVector(coords, TpM) for coords in tangent_coords]
+  basis = TangentBasis(basis, TpM)
+
+  # Orthogonalize it using gram schmidt
+  orthogonal_basis = gram_schmidt(basis, g)
+  assert orthogonal_basis in FO
+
+################################################################################################################
+
 def run_all():
   jax.config.update("jax_enable_x64", True)
   symmetrize_tests()
   example_13p11()
   gradient_tests()
+  orthogonal_frame_bundle_tests()
 
 if __name__ == "__main__":
   from debug import *

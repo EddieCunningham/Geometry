@@ -259,7 +259,7 @@ class AutonomousTensorField(TensorField):
 
 ################################################################################################################
 
-class ParametricRiemannianMetric(RiemannianMetric):
+class ParametricRiemannianMetric(TensorFieldToSymmetricTensorField):
   """A parametric Riemannian metric
 
   Attribues:
@@ -274,19 +274,10 @@ class ParametricRiemannianMetric(RiemannianMetric):
       M: The base manifold.
     """
     self.manifold = M
-    super().__init__(self.manifold)
-
-    self._T = AutonomousTensorField(tf, self.type, self.manifold)
-
-  @property
-  def T(self) -> TensorField:
-    """The non-symmetric tensor field that we'll use to construct
-    a symmetric tensor field
-
-    Returns:
-      A tensor field object
-    """
-    return self._T
+    self.type = TensorType(0, 2)
+    psd_tf = lambda x: tf(x).T@tf(x) # Need PSD coordinates
+    T = AutonomousTensorField(psd_tf, self.type, self.manifold)
+    super().__init__(T, self.type, self.manifold)
 
 class ParametricDifferentialForm(TensorFieldToDifferentialForm):
   """A parametric differential form

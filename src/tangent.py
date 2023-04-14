@@ -290,6 +290,64 @@ class TangentBasis(VectorSpaceBasis):
     super().__init__(basis_vectors, TpM)
     self.TpM = TpM
 
+  def __call__(self, v: Coordinate) -> TangentVector:
+    """Turns a vector in R^n into a vector on TpM
+
+    Args:
+      v: A vector in Rn
+
+    Returns:
+      A tangent vector
+    """
+    assert v in Reals(dimension=self.TpM.manifold.dimension)
+
+    mat = jnp.stack([v.x for v in self.basis], axis=1)
+    new_v = mat@v
+
+    return TangentVector(new_v, self.TpM)
+
+  def inverse(self, v: TangentVector) -> Coordinate:
+    """Get the Euclidean coordinates of a tangent vector.
+    This is the inverse of __call__
+
+    Args:
+      v: A tangent vector
+
+    Returns:
+      Coordianates
+    """
+    mat = jnp.stack([v.x for v in self.basis], axis=1)
+    mat_inv = jnp.linalg.inv(mat)
+    return mat_inv@v.x
+
+  def get_inverse(self) -> Diffeomorphism:
+    """Get the inverse function as a Diffeomorphism object
+
+    Returns:
+      Diffeomorphism
+    """
+    return Diffeomorphism(self.inverse, domain=self.TpM, image=EuclideanManifold(dimension=self.TpM.manfiold.dimension))
+
+  def call_unvectorized(self, v: Coordinate) -> TangentVector:
+    """Turns a vector in R^n into a vector on TpM
+
+    Args:
+      v: A vector in Rn
+
+    Returns:
+      A tangent vector
+    """
+    assert v in Reals(dimension=self.TpM.manifold.dimension)
+
+    ans = v[0]*self.basis[0]
+    for i, (vi, ei) in enumerate(zip(v, self.basis)):
+      if i == 0:
+        continue
+
+      ans += vi*ei
+
+    return ans
+
 ################################################################################################################
 
 class Frame(Section[Point,TangentBasis], abc.ABC):

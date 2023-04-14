@@ -278,7 +278,7 @@ class GLRn(GeneralLinearGroup):
     shape_condition = p.shape == (self.N, self.N)
     det_condition = True
     if util.GLOBAL_CHECK:
-      det_condition = jnp.linalg.slogdet(p)[1] > -1e5
+      det_condition = jnp.abs(jnp.linalg.det(p)) > 1e-5
     return shape_condition and det_condition
 
   def get_atlas(self) -> Atlas:
