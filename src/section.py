@@ -10,6 +10,7 @@ from src.set import *
 from src.map import *
 from src.manifold import *
 import src.util as util
+import copy
 
 __all__ = ["Section",
            "BundleHomomorphismSection",

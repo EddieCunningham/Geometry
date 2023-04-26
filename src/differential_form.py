@@ -19,6 +19,7 @@ import src.util as util
 import einops
 import itertools
 import abc
+import copy
 import math
 
 __all__ = ["Permutation",
@@ -699,8 +700,7 @@ class AlternatingTensorBundle(TensorBundle):
 ################################################################################################################
 
 class DifferentialForm(TensorField, abc.ABC):
-  """The symmetrization of a tensor field.  This will have a non alternating tensor
-  field that we will just alternate when calling this tensor.
+  """A differential k form
 
   Attributes:
     type: The type of the tensor field
@@ -736,8 +736,7 @@ class DifferentialForm(TensorField, abc.ABC):
       return self.apply_to_co_vector_fields(*x)
     else:
       p = x[0]
-      if util.GLOBAL_CHECK:
-        assert p in self.manifold
+      assert p in self.manifold
       return self.apply_to_point(p)
 
   def apply_to_co_vector_fields(self, *Xs: List[VectorField]) -> Map:
@@ -973,6 +972,13 @@ def exterior_derivative(w: DifferentialForm) -> DifferentialForm:
     assert isinstance(w, Map)
     return FunctionDifferential(w)
 
+  from src.connection import LieAlgebraValuedDifferentialForm
+  if isinstance(w, LieAlgebraValuedDifferentialForm):
+    # Apply the exterior derivative to each of the coefficients
+    dws = [exterior_derivative(_w) for _w in w.ws]
+    return LieAlgebraValuedDifferentialForm(dws, w.basis_vector_fields)
+
+
   coords_and_basis = w.get_coordinate_functions_with_basis()
   wI, eI = zip(*coords_and_basis)
   dwI = [FunctionDifferential(_wI) for _wI in wI]
@@ -1031,5 +1037,3 @@ def pullback_differential_form(F: Map, T: DifferentialForm) -> PullbackDifferent
     F^*(T)
   """
   return PullbackDifferentialForm(F, T)
-
-################################################################################################################

@@ -8,10 +8,12 @@ import abc
 from src.set import *
 from src.map import *
 from src.manifold import *
+from src.tangent import *
 from src.lie_group import *
 from src.instances.manifolds import *
 from src.vector import *
 import src.util as util
+import itertools
 
 __all__ = ["RealLieGroup",
            "GeneralLinearGroup",
@@ -367,6 +369,19 @@ class OrthogonalGroup(GLRn):
   """
   Element = Matrix
 
+  def __init__(self, dim: int):
+    """Create the space of invertible nxn matrices
+
+    Args:
+      dim: Dimension
+    """
+    self.N = dim
+    dimension = dim**2
+
+    # TODO: Need to find correct way to construct chart
+    # dimension = int(dim*(dim - 1)/2)
+    LieGroup.__init__(self, dimension=dimension)
+
   def contains(self, p: Point) -> bool:
     """Checks to see if p exists in this set.
 
@@ -383,6 +398,19 @@ class OrthogonalGroup(GLRn):
       return True
     return jnp.allclose(jnp.linalg.svd(p, compute_uv=False), 1.0)
 
+  def get_atlas(self) -> Atlas:
+    """The chart outputs the flattened matrix
+
+    Returns:
+      atlas: The atlas object
+    """
+    def phi(x, inverse=False):
+      if inverse == False:
+        return x.ravel()
+      return x.reshape((self.N, self.N))
+
+    return Atlas([Chart(phi=phi, domain=self, image=Reals(dimension=self.N**2))])
+
   def get_lie_algebra(self) -> "LieAlgebra":
     """Get the Lie algebra associated with this Lie group.  This is the
     tangent space at the identity and it is equipped with a Lie bracket.
@@ -397,8 +425,30 @@ class OrthogonalGroup(GLRn):
           return False
         if util.GLOBAL_CHECK == False:
           return True
-        return jnp.allclose(p, -p.T)
-    return SpaceOfSkewSymmetricMatrices(dim=self.N)
+
+        p_sq = p.v.x.reshape((self.G.N, self.G.N))
+        return jnp.allclose(p_sq, -p_sq.T)
+        # return p.v.x.shape == (self.dimension,)
+
+      def get_TeG_basis(self) -> List[TangentVector]:
+        """Get a basis for the tangent space at the identity.  This will be used
+        to get a basis for the lie algebra
+
+        Returns:
+          A list of tangent vectors
+        """
+        # return self.TeG.get_basis()
+        # Skew symmetric matrix basis
+        zero = jnp.zeros((self.G.N, self.G.N))
+
+        basis = []
+        for i, j in itertools.combinations(range(self.G.N), 2):
+          E = zero.at[i,j].set(1.0)
+          E = E.at[j,i].set(-1.0)
+          basis.append(TangentVector(E.ravel(), self.TeG))
+        return TangentBasis(basis, self.TeG)
+
+    return SpaceOfSkewSymmetricMatrices(G=self)
 
 ################################################################################################################
 

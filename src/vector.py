@@ -160,7 +160,7 @@ class VectorSpace(EuclideanManifold):
     self.chart = Chart(chart_fun, domain=self, image=Reals(dimension=self.dimension))
     return Atlas([self.chart])
 
-  def get_basis(self) -> List[Vector]:
+  def get_basis(self) -> "VectorSpaceBasis":
     """Get a basis of vectors for the vector space
 
     Returns:

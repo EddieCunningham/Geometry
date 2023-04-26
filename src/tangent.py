@@ -36,7 +36,7 @@ class TangentVector(Vector):
       x: The coordinates of the vector in the basis induced by a chart.
       TpM: The tangent space that the vector lives on.
     """
-    assert x.shape[-1] == TpM.dimension
+    # assert x.shape[-1] == TpM.dimension
     super().__init__(x, TpM)
     self.TpM = TpM
 
@@ -215,8 +215,7 @@ class VectorField(Section[Point,TangentVector], abc.ABC):
     if isinstance(x, Map):
       return self.apply_to_map(x)
     else:
-      if util.GLOBAL_CHECK:
-        assert x in self.manifold
+      assert x in self.manifold
       return self.apply_to_point(x)
 
   def get_coordinate_functions_with_basis(self) -> List[Tuple[Map[Manifold,Coordinate],"CoordinateVectorField"]]:
@@ -301,10 +300,26 @@ class TangentBasis(VectorSpaceBasis):
     """
     assert v in Reals(dimension=self.TpM.manifold.dimension)
 
-    mat = jnp.stack([v.x for v in self.basis], axis=1)
+    mat = jnp.stack([X.x for X in self.basis], axis=1)
     new_v = mat@v
 
     return TangentVector(new_v, self.TpM)
+
+  def right_multiply(self, g: InvertibleMatrix) -> "TangentBasis":
+    """Multiply on the right by a matrix.
+
+    Args:
+      g: An nxn matrix
+
+    Returns:
+      A new tangent basis with new coordinates
+    """
+    mat = jnp.stack([X.x for X in self.basis], axis=1)
+    assert g.shape == mat.shape
+    new_mat = mat@g
+
+    xs = jnp.split(mat, len(self.basis), axis=1) # Split on cols
+    return TangentBasis([TangentVector(x.ravel(), self.TpM) for x in xs], self.TpM)
 
   def inverse(self, v: TangentVector) -> Coordinate:
     """Get the Euclidean coordinates of a tangent vector.

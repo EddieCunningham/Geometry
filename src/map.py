@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable, List, TypeVar, Generic, Tuple, Union
+from typing import Callable, List, TypeVar, Generic, Tuple, Union, Iterable
 import src.util
 from functools import partial, reduce
 import jax.numpy as jnp
@@ -20,7 +20,8 @@ __all__ = ["Input",
            "InvertibleFunction",
            "InvertibleMap",
            "Diffeomorphism",
-           "compose"]
+           "compose",
+           "curry"]
 
 Input = TypeVar("Input", bound=Point)
 Output = TypeVar("Output", bound=Point)
@@ -343,6 +344,36 @@ class ProjectionMap(Map[Tuple[Point],Point]):
     self.idx = idx
     f = lambda x: x[self.idx]
     super().__init__(f, domain=domain, image=image)
+
+NOOP = None
+
+def curry(f: Map, args: Tuple[Union[NOOP,Input]]) -> Map:
+  """Like a projection map
+
+  Args:
+    f: A function that maps between Euclidean spaces.
+    domain: Must be a set of Real numbers.
+    image: Must be a set of Real numbers.
+  """
+  def curried_f(inputs: Tuple[Input]):
+    assert len(args) == len(inputs)
+    new_args = [inputs if a is None else a for a in args]
+    return f(new_args)
+
+  domain = f.domain
+  from src.manifold import CartesianProductManifold
+  assert isinstance(domain, CartesianProductManifold)
+  assert len(args) == len(domain.Ms)
+  Ms = []
+  for arg, M in zip(args, domain.Ms):
+    if arg is None:
+      Ms.append(M)
+
+  if len(Ms) > 1:
+    new_domain = type(domain)(*Ms)
+  else:
+    new_domain = Ms[0]
+  return type(f)(curried_f, domain=new_domain, image=f.image)
 
 ################################################################################################################
 

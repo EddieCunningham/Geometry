@@ -145,12 +145,17 @@ def cotangent_tensor_product_test():
   out2 = T1T2.call_unvectorized(*ws, *vs)
   assert jnp.allclose(out1, out2)
 
-
 ################################################################################################################
 
-def get_tensor_field_fun(M, tensor_type, rng_key):
-  manifold_dimension = M.dimension
+def get_tensor_field_fun(M, tensor_type, rng_key, n_outputs=None, input_dimension=None):
+  if input_dimension is None:
+    manifold_dimension = M.dimension
+  else:
+    manifold_dimension = input_dimension
   dimension = manifold_dimension**(tensor_type.k + tensor_type.l)
+  if n_outputs is not None:
+    dimension *= n_outputs
+
   # Construct the tensor field over M
   import nux
   net = nux.CouplingResNet1D(out_dim=dimension,
@@ -168,7 +173,10 @@ def get_tensor_field_fun(M, tensor_type, rng_key):
   params = treedef.unflatten(new_leaves)
 
   def vf(x):
-    return net(x[None], params=params, rng_key=rng_key)[0].reshape([manifold_dimension]*(tensor_type.k + tensor_type.l))
+    out_shape = [manifold_dimension]*(tensor_type.k + tensor_type.l)
+    if n_outputs is not None:
+      out_shape = [n_outputs] + out_shape
+    return net(x[None], params=params, rng_key=rng_key)[0].reshape(out_shape)
 
   return vf
 
@@ -316,21 +324,6 @@ def tensor_field_tests():
   out1 = test1(X1)(p)
   out2 = test2(X1)(p)
   assert jnp.allclose(out1, out2)
-
-  # # e) This is wrong in the book
-  # def _G(p):
-  #   assert p.shape == (5, 5)
-  #   out = random.normal(k1, (5, 5))@p
-  #   return out
-  # G = Map(_G, domain=N, image=N)
-  # GFp = G(F(p))
-
-  # test1 = pullback_tensor_field(compose(F, G), T)
-  # test2 = pullback_tensor_field(F, pullback_tensor_field(G, T))
-
-  # out1 = test1(X1, X2, X3)(p)
-  # out2 = test2(X1, X2, X3)(p)
-  # assert jnp.allclose(out1, out2)
 
 
 def run_all():

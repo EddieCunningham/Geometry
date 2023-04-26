@@ -16,6 +16,8 @@ from src.vector_field import *
 from src.section import *
 from src.riemannian_metric import *
 from src.differential_form import *
+from src.lie_algebra import *
+from src.connection import *
 import src.util as util
 
 __all__ = ["AutonomousVectorField",
@@ -23,6 +25,7 @@ __all__ = ["AutonomousVectorField",
            "AutonomousTensorField",
            "ParametricRiemannianMetric",
            "ParametricDifferentialForm",
+           "ParametricLieAlgebraValuedDifferentialForm",
            "AutonomousFrame",
            "AutonomousCoframe",
            "SimpleTimeDependentVectorField"]
@@ -296,6 +299,54 @@ class ParametricDifferentialForm(TensorFieldToDifferentialForm):
     self.manifold = M
     T = AutonomousTensorField(tf, tensor_type, self.manifold)
     super().__init__(T, tensor_type, self.manifold)
+
+class ParametricLieAlgebraValuedDifferentialForm(LieAlgebraValuedDifferentialForm):
+  """A parametric lie algebra valued differential form
+
+  Attribues:
+    tf: The function that gives us tensors at points
+    M: Manifold
+  """
+  def __init__(self, tfs: Callable[[Coordinate], Coordinate], tensor_type: TensorType, M: Manifold, lieG: LieAlgebra):
+    """Creates a new tensor field.
+
+    Args:
+      tf: Tensor field coordinate function.
+      M: The base manifold.
+    """
+    self.manifold = M
+    assert isinstance(lieG, LieAlgebra)
+    self.lieG = lieG
+    self.basis_vector_fields = self.lieG.get_basis()
+
+    assert len(tfs) == len(self.basis_vector_fields)
+
+    self.tfs = tfs
+
+    ws = [ParametricDifferentialForm(tf, tensor_type, M) for tf in self.tfs]
+
+    super().__init__(ws, self.basis_vector_fields)
+
+  # def apply_to_point(self, p: Point) -> LieAlgebraValuedAlternatingTensor:
+  #   """Evaluate the tensor field at a point.
+
+  #   Args:
+  #     p: Point on the manifold.
+
+  #   Returns:
+  #     Tensor at p.
+  #   """
+  #   # Get the coordinates for the alternating tensor at each basis vector
+  #   chart = self.manifold.get_chart_for_point(p)
+  #   p_hat = chart(p)
+  #   coords = self.tf(p_hat)
+
+  #   # Make an alternating tensor out of each of the coordinates
+  #   TkTpM = AlternatingTensorSpace(p, self.type, self.manifold)
+  #   ws = [make_alternating(Tensor(x, TkTpM=TkTpM)) for x in coords]
+
+  #   # Create the lie valued alternating tensor
+  #   return LieAlgebraValuedAlternatingTensor(ws, basis=self.basis_vector_fields)
 
 ################################################################################################################
 

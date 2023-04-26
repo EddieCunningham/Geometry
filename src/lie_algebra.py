@@ -10,22 +10,132 @@ from src.map import *
 from src.manifold import *
 from src.lie_group import *
 from src.tangent import *
+from src.cotangent import *
 from src.vector import *
 from src.vector_field import *
 from src.section import *
 from src.bundle import *
-from src.flow import *
 from src.instances.manifolds import *
 from src.instances.lie_groups import *
 import src.util as util
 
 __all__ = ["LieAlgebra",
            "LeftInvariantVectorField",
+           "LeftInvariantCovectorField",
            "induced_lie_algebra_homomorphism",
            "InducedLieAlgebraHomomorphismLIVF",
            "SpaceOfVectorFields",
            "SpaceOfLieAlgebraLinearMaps",
            "SpaceOfMatrices"]
+
+class LeftInvariantCovectorField(CovectorField):
+  """The left invariant vector field corresponding to an
+  element of the Lie algebra
+
+  Attributes:
+    v: The vector in TeG
+    G: The Lie group
+  """
+  def __init__(self, w: CotangentVector, G: LieGroup):
+    """Create the object
+
+    Args:
+      dim: Dimension
+    """
+    assert isinstance(w, CotangentVector)
+    assert isinstance(G, LieGroup)
+    self.w = w
+    self.G = G
+    self.manifold = self.G
+    super().__init__(self.manifold)
+
+  def apply_to_point(self, g: Point) -> CotangentVector:
+    """Evaluate the vector field at a point.
+    Pull w back from TeG to TgG
+
+    Args:
+      p: Point on the manifold.
+
+    Returns:
+      Tangent vector at g.
+    """
+    if g is self.G.e:
+      return self.w
+
+    assert g in self.G
+    g_inv = self.G.inverse(g)
+    dLg_e = self.G.left_translation_map(g_inv).get_pullback(g)
+    return dLg_e(self.w)
+
+  def __add__(self, Y: "LeftInvariantCovectorField") -> "LeftInvariantCovectorField":
+    """Add two sections together
+
+    Args:
+      Y: Another LeftInvariantCovectorField
+
+    Returns:
+      X + Y
+    """
+    # Ensure that X and Y are compatable
+    assert self.manifold == Y.manifold
+    # assert self.total_space == Y.total_space
+
+    class LICFSum(LeftInvariantCovectorField):
+      def __init__(self, X, Y):
+        assert isinstance(X, LeftInvariantCovectorField)
+        assert isinstance(Y, LeftInvariantCovectorField)
+        assert X.G == Y.G
+        self.X = X
+        self.Y = Y
+        e = X.G.e
+        w = X(e) + Y(e)
+        super().__init__(w, X.G)
+
+    return LICFSum(self, Y)
+
+  def __rmul__(self, f: Union[Map,float]) -> "LeftInvariantCovectorField":
+    """Multiply a LeftInvariantCovectorField with a scalar or function. fX
+
+    Args:
+      f: Another map or a scalar
+
+    Returns:
+      fX
+    """
+    is_map = isinstance(f, Map)
+    is_scalar = f in Reals(dimension=1)
+
+    if is_scalar:
+      class LIVFScalarProduct(LeftInvariantCovectorField):
+        def __init__(self, a, X):
+          assert isinstance(X, LeftInvariantCovectorField)
+          self.a = a
+          self.X = X
+          G = self.X.G
+          w = a*self.X(G.e)
+          super().__init__(w, G)
+
+      return LIVFScalarProduct(f, self)
+
+    else:
+      # No longer left invariant
+      class LIVFMapProduct(CovectorField):
+        def __init__(self, f, X):
+          assert isinstance(X, LeftInvariantCovectorField)
+          assert isinstance(f, Map)
+          self.X = X
+          self.G = X.G
+          self.f = f
+          super().__init__(self.G)
+
+        def apply_to_point(self, p: Input) -> Output:
+          fp = self.f(p)
+          Xp = self.X(p)
+          return fp*Xp
+
+      return LIVFMapProduct(f, self)
+
+################################################################################################################
 
 class LeftInvariantVectorField(VectorField):
   """The left invariant vector field corresponding to an
@@ -58,6 +168,10 @@ class LeftInvariantVectorField(VectorField):
     Returns:
       Tangent vector at g.
     """
+    if g is self.G.e:
+      return self.v
+
+    assert g in self.G
     dLg_e = self.G.left_translation_map(g).get_differential(self.G.e)
     return dLg_e(self.v)
 
@@ -74,17 +188,18 @@ class LeftInvariantVectorField(VectorField):
     assert self.manifold == Y.manifold
     # assert self.total_space == Y.total_space
 
-    class SectionSum(LeftInvariantVectorField):
-      def __init__(self, X, Y, pi):
+    class LIVFSum(LeftInvariantVectorField):
+      def __init__(self, X, Y):
+        assert isinstance(X, LeftInvariantVectorField)
+        assert isinstance(Y, LeftInvariantVectorField)
+        assert X.G == Y.G
         self.X = X
         self.Y = Y
-        self.G = X.G
-        Section.__init__(self, pi)
+        e = X.G.e
+        v = X(e) + Y(e)
+        super().__init__(v, X.G)
 
-      def apply_to_point(self, p: Input) -> Output:
-        return self.X(p) + self.Y(p)
-
-    return SectionSum(self, Y, self.pi)
+    return LIVFSum(self, Y)
 
   def __rmul__(self, f: Union[Map,float]) -> "LeftInvariantVectorField":
     """Multiply a LeftInvariantVectorField with a scalar or function. fX
@@ -98,22 +213,35 @@ class LeftInvariantVectorField(VectorField):
     is_map = isinstance(f, Map)
     is_scalar = f in Reals(dimension=1)
 
-    assert is_map or is_scalar
+    if is_scalar:
+      class LIVFScalarProduct(LeftInvariantVectorField):
+        def __init__(self, a, X):
+          assert isinstance(X, LeftInvariantVectorField)
+          self.a = a
+          self.X = X
+          G = self.X.G
+          v = a*self.X(G.e)
+          super().__init__(v, G)
 
-    class SectionRHSProduct(LeftInvariantVectorField):
-      def __init__(self, X, pi):
-        self.X = X
-        self.G = X.G
-        self.lhs = f
-        self.is_float = f in Reals(dimension=1)
-        Section.__init__(self, pi)
+      return LIVFScalarProduct(f, self)
 
-      def apply_to_point(self, p: Input) -> Output:
-        fp = self.lhs if self.is_float else self.lhs(p)
-        Xp = self.X(p)
-        return fp*Xp
+    else:
+      # No longer left invariant
+      class LIVFMapProduct(VectorField):
+        def __init__(self, f, X):
+          assert isinstance(X, LeftInvariantVectorField)
+          assert isinstance(f, Map)
+          self.X = X
+          self.G = X.G
+          self.f = f
+          super().__init__(self.G)
 
-    return SectionRHSProduct(self, self.pi)
+        def apply_to_point(self, p: Input) -> Output:
+          fp = self.f(p)
+          Xp = self.X(p)
+          return fp*Xp
+
+      return LIVFMapProduct(f, self)
 
 ################################################################################################################
 
@@ -136,13 +264,15 @@ class InducedLieAlgebraHomomorphismLIVF(LeftInvariantVectorField):
     """
     assert isinstance(F.domain, LieGroup) and isinstance(F.image, LieGroup)
     self.F = F
+    self.G = X.G
+    self.e = self.G.e
 
     # Get the push forward the tangent vector at the identity
-    dFe = F.get_differential(X.G.e)
-    Xe = X(X.G.e)
-    Ye = dFe(Xe)
+    dFe = F.get_differential(self.e)
+    self.Xe = X(self.e)
+    self.Ye = dFe(self.Xe)
 
-    super().__init__(Ye, self.F.image)
+    super().__init__(self.Ye, self.F.image)
 
   def apply_to_point(self, g: Point) -> TangentVector:
     """Evaluate the vector field at a point.
@@ -237,7 +367,20 @@ class LieAlgebra(Manifold, abc.ABC):
     assert v.TpM == TangentSpace(self.G.e, self.G)
     return LeftInvariantVectorField(v, self.G)
 
-  def get_one_parameter_subgroup(self, X: LeftInvariantVectorField) -> IntegralCurve:
+  def get_left_invariant_covector_field(self, w: CotangentVector) -> LeftInvariantCovectorField:
+    """Given w in coTeG, return the vector field W where W_g = d(L_g)_e^*(w)
+
+    Args:
+      w: A cotangent vector at the identity
+
+    Returns:
+      A covector field where at point g, W_g = d(L_g)_e^*(w)
+    """
+    assert isinstance(w, CotangentVector)
+    assert w.coTpM == CotangentSpace(self.G.e, self.G)
+    return LeftInvariantCovectorField(w, self.G)
+
+  def get_one_parameter_subgroup(self, X: LeftInvariantVectorField) -> "IntegralCurve":
     """One parameter subgroup generated by X.  These are maximal integral curves
     of left invariant vector fields starting at the identity.
 
@@ -247,6 +390,7 @@ class LieAlgebra(Manifold, abc.ABC):
     Returns:
       The integral curve generated by X
     """
+    from src.flow import IntegralCurve
     assert isinstance(X, LeftInvariantVectorField)
     return IntegralCurve(self.G.e, X)
 
@@ -275,6 +419,39 @@ class LieAlgebra(Manifold, abc.ABC):
     ad = Map(_ad, domain=self, image=SpaceOfLieAlgebraLinearMaps(self.G))
     return ad
 
+  def get_TeG_basis(self) -> List[TangentVector]:
+    """Get a basis for the tangent space at the identity.  This will be used
+    to get a basis for the lie algebra
+
+    Returns:
+      A list of tangent vectors
+    """
+    return self.TeG.get_basis()
+
+  def get_basis(self) -> List[VectorField]:
+    """Get a basis for the lie algebra.
+
+    Returns:
+      A list of vector fields
+    """
+    return [self.get_left_invariant_vector_field(v) for v in self.get_TeG_basis()]
+
+  def get_TeG_dual_basis(self) -> List[CotangentVector]:
+    """Get a dual basis for the tangent space at the identity.
+
+    Returns:
+      A list of cotangent vectors
+    """
+    return self.TeG.get_dual_basis()
+
+  def get_dual_basis(self) -> List[CovectorField]:
+    """Get a dual basis for the lie algebra.
+
+    Returns:
+      A list of covector fields
+    """
+    return [self.get_left_invariant_covector_field(w) for w in self.get_TeG_dual_basis()]
+
 ################################################################################################################
 
 class SpaceOfVectorFields(LieAlgebra):
@@ -292,11 +469,21 @@ class SpaceOfVectorFields(LieAlgebra):
     return lie_bracket(X, Y)
 
   def contains(self, p: VectorField):
+    """Checks to see if p exists in this set.
+
+    Args:
+      p: Test point.
+
+    Returns:
+      True if p is in the set, False otherwise.
+    """
     return isinstance(p, VectorField)
 
 ################################################################################################################
 
 class SpaceOfMatrices(LieAlgebra):
+
+  Element = Matrix
 
   def __init__(self, G: GLRn):
     """Create the space of nxn matrices.
@@ -336,6 +523,7 @@ class SpaceOfMatrices(LieAlgebra):
     return C
 
   def contains(self, p: LeftInvariantVectorField) -> bool:
+    assert isinstance(p, LeftInvariantVectorField)
     type_check = isinstance(p, LeftInvariantVectorField)
     group_check = p.G == self.G
     return type_check and group_check
@@ -364,3 +552,12 @@ class SpaceOfLieAlgebraLinearMaps(Set):
     if out == False:
       import pdb; pdb.set_trace()
     return out
+
+  def get_TeG_basis(self) -> List[TangentVector]:
+    """Get a basis for the tangent space at the identity.  This will be used
+    to get a basis for the lie algebra
+
+    Returns:
+      A list of tangent vectors
+    """
+    assert 0, "Not implemented"

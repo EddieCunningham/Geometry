@@ -897,7 +897,7 @@ def tensor_field_product(*Ts: List[TensorField]) -> TensorField:
 ################################################################################################################
 
 def as_tensor_field(w: CovectorField):
-  """Turn a covector field into a (0,k) tensor field
+  """Turn a covector field into a (0,1) tensor field
 
   Args:
     w: The covector field
@@ -905,7 +905,8 @@ def as_tensor_field(w: CovectorField):
   Returns:
     w but as a tensor field object
   """
-  class CovectorFieldAsTensor(TensorField):
+  from src.differential_form import DifferentialForm
+  class CovectorFieldAsTensor(DifferentialForm):
     def __init__(self, w):
       self.w = w
       tensor_type = TensorType(0, 1)

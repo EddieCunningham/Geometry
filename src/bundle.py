@@ -1,6 +1,6 @@
 from functools import partial
 from typing import Callable, List, Optional, Tuple, Generic
-import src.util
+import src.util as util
 from functools import partial
 from copy import deepcopy
 import jax.numpy as jnp
@@ -22,6 +22,7 @@ __all__ = ["FiberBundle",
            "ProductBundle",
            "TangentBundle",
            "GlobalDifferential",
+           "PrincipalGBundle",
            "CotangentBundle",
            "FrameBundle",
            "CoframeBundle"]
@@ -53,6 +54,8 @@ class FiberBundle(Manifold, abc.ABC):
       F: The fiber F.
       M: The base space.
     """
+    # assert isinstance(M, Manifold)
+
     self.fiber = F
     self.manifold = M
 
@@ -207,7 +210,7 @@ class ProductBundle(CartesianProductManifold, FiberBundle):
       M: The manifold.
     """
     self.manifold, self.fiber = M, F
-    super().__init__(M, F)
+    CartesianProductManifold.__init__(self, M, F)
     FiberBundle.__init__(self, M, F)
 
   def get_projection_map(self) -> Map[Element,Point]:
@@ -363,7 +366,122 @@ class CotangentBundle(TangentBundle):
 
 ################################################################################################################
 
-class FrameBundle(FiberBundle, abc.ABC):
+class PrincipalGBundle(FiberBundle, abc.ABC):
+  """A principal G-bundle is a fiber bundle where the fiber is a Lie group
+  that is also equipped with a differentiable right G-action E x G -> G such
+  that the following holds:
+  1) E_p = pi^{-1}(p), are the orbits for the G-action (the fibers are orbits)
+  2) The local trivialization maps are equivariant, so phi(x*g) = phi(x)*g
+
+  Attributes:
+    M: The manifold.
+  """
+
+  def __init__(self, M: Manifold, G: "LieGroup"):
+    """Create a fiber bundle
+
+    Attributes:
+      F: The fiber F.
+      M: The base space.
+    """
+    from src.lie_group import LieGroup
+    assert isinstance(G, LieGroup)
+    super().__init__(M, G)
+    self.G = self.fiber
+
+  @abc.abstractmethod
+  def get_action_map(self, *, right: bool) -> Map[Tuple[Fiber,Point],Fiber]:
+    """The right action map of G on M.  This is set to
+       a translation map by default.
+
+    Args:
+      right: Use a right action if true otherwise left action
+
+    Returns:
+      theta
+    """
+    pass
+
+  def fundamental_vector_field(self, A: "LeftInvariantVectorField") -> VectorField:
+    """The fundamental vector field corresponding to A is defined at
+    u as the tangent vector of the curve ug(t) where g(t) = exp(tA).
+
+    Any vector field over the principal G bundle, P, that can be
+    generated like this are called "vertical" tangent vectors.
+
+    Args:
+      A: An element of the Lie algebra
+
+    Returns:
+      The fundamental vector field
+    """
+    from src.lie_algebra import LeftInvariantVectorField
+    class FundamentalVectorField(VectorField):
+
+      def __init__(self, P: "PrincipalGBundle", A: LeftInvariantVectorField):
+        assert isinstance(A, LeftInvariantVectorField)
+        assert isinstance(P, PrincipalGBundle)
+        self.A = A
+        self.P = P
+        self.G = self.P.G
+        self.right_action = self.P.get_action_map(right=True)
+        assert isinstance(self.right_action.domain, CartesianProductManifold)
+        assert self.right_action.domain.Ms[0] == self.P
+        assert self.right_action.domain.Ms[1] == self.G
+        assert self.right_action.image == self.P
+        super().__init__(self.P)
+
+      def apply_to_point(self, u: Point) -> TangentVector:
+        def _theta_u(g):
+          return self.right_action((u, g))
+        theta_u = Map(_theta_u, domain=self.G, image=self.P)
+        dtheta_u_e = theta_u.get_differential(self.G.e)
+        Ae = self.A(self.G.e)
+        Astar_u = dtheta_u_e(Ae)
+        return Astar_u
+
+    return FundamentalVectorField(self, A)
+
+  def connection_one_form(self, X: VectorField) -> "LeftInvariantVectorField":
+    """The connection 1-form turns a fundamental vector field into a left
+    invariant vector field.
+    w(Astar) = A
+    w: χ(P) -> Lie(G)
+
+    If X is a fundamental vector field, then w(X) returns
+
+    Args:
+      X: A vector field (not necessarily fundamental vector field)
+
+    Returns:
+      Left invariant vector field corresponding to input
+    """
+    from src.lie_algebra import LeftInvariantVectorField
+    class ConnectionOneForm(LieAlgebraValuedDifferentialForm):
+
+      def __init__(self, P: "PrincipalGBundle", X: VectorField):
+        assert isinstance(X, VectorField)
+        assert isinstance(P, PrincipalGBundle)
+        self.X = X
+        self.P = P
+        self.G = self.P.G
+        self.right_action = self.P.get_action_map(right=True)
+        assert isinstance(self.right_action.domain, CartesianProductManifold)
+        assert self.right_action.domain.Ms[0] == self.P
+        assert self.right_action.domain.Ms[1] == self.G
+        assert self.right_action.image == self.P
+        tensor_type = TensorType(0, 1)
+        super().__init__(tensor_type, self.P, self.G.lieG)
+
+      def apply_to_point(self, p: Point) -> LieAlgebraValuedAlternatingTensor:
+        pass
+
+
+    return ConnectionOneForm(self, X)
+
+################################################################################################################
+
+class FrameBundle(PrincipalGBundle):
   """Frame bundle.  Represents the space of frames that
   we can have over a manifold.
 
@@ -481,7 +599,7 @@ class FrameBundle(FiberBundle, abc.ABC):
 
 ################################################################################################################
 
-class CoframeBundle(FrameBundle, abc.ABC):
+class CoframeBundle(FrameBundle):
   """Co-frame bundle.  Represents the space of coframes that
   we can have over a manifold.
 
@@ -535,7 +653,67 @@ class CoframeBundle(FrameBundle, abc.ABC):
 
 ################################################################################################################
 
-class _GBundleMixin(abc.ABC):
-  pass
+# class OrbitSpace(Manifold):
 
-################################################################################################################
+#   def __init__(self, M: Manifold, G: LieGroup):
+#     self.M = M
+#     self.G = G
+#     dimension = self.M.dimension - self.G.dimension
+#     super().__init__(dimension=dimension)
+
+#   def get_atlas(self) -> Atlas:
+#     """Construct the atlas for the orbit space.  Do this by first
+#     finding a chart for M and then adapting it to the G-action, which
+#     we'll do by ensuring that the tangent space is aligned with
+
+#     Args:
+#       atlas: Atlas providing coordinate representation.
+#     """
+#     new_charts = []
+#     for chart in self.M.atlas.charts:
+
+#       rotation_matrix = None
+
+#       def phi(x, inverse=False):
+#         if inverse == False:
+#           # Get a chart from M
+#           phi = self.M.get_chart_for_point(x)
+
+#           # Get the orbit map
+#           theta_p = self.G.get_orbit_map(x, self.manifold)
+
+#           # Get the differential of the orbit map at the identity element
+#           dtheta_p_e = theta_p.get_differential(self.G.e)
+
+#           # Get a basis for the Lie algebra
+#           basis = G.lieG.TeG.get_basis()
+
+#           # Each basis vector for TeG will be pushed through the orbit map
+#           # to get a basis vector for the tangent space of the orbit.
+#           # Then we'll keep track of the coordinates of the tangent vectors
+#           # in terms of the chart for phi
+#           coords = []
+#           for i, ei in enumerate(basis):
+#             dtheta_ei = dtheta_p_e(ei)
+#             coord = dtheta_ei.get_coordinates(phi)
+#             coords.append(coord)
+
+#           coords = jnp.array(coords)
+
+#           # The coordinates should form an NxK matrix called B.
+#           # We need to find a matrix A s.t. AB = [C \\ 0]
+#           # TODO: Finish this?
+#           nonlocal rotation_matrix
+
+#           import pdb; pdb.set_trace()
+#         else:
+#           # We need to keep track of the information we throw away in the
+#           # forward pass so that we can invert correctly
+#           assert 0
+
+#       new_chart = Chart(phi, domain=self, image=Reals(dimension=self.dimension))
+#       new_charts.append(new_chart)
+
+#     return Atlas(new_charts)
+
+# ################################################################################################################

@@ -256,7 +256,7 @@ class CartesianProductManifold(Manifold):
     """
     self.Ms = Ms
     self.dimensions = [M.dimension for M in self.Ms]
-    super().__init__(dimension=sum(self.dimensions))
+    Manifold.__init__(self, dimension=sum(self.dimensions))
 
   def get_atlas(self) -> Atlas:
     """Construct the atlas for the cartesian product.  This involves

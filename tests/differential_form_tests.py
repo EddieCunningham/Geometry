@@ -32,13 +32,13 @@ def get_inputs(dimension=5):
   M = Sphere(dim=dimension)
   p = random.normal(rng_key, (M.dimension + 1,)); p = p/jnp.linalg.norm(p)
 
-  # Evaluate it on some cotangent and tangent vectors
+  # Create a tensor
   tensor_type = TensorType(0, 3)
   TkTpM = TensorSpace(p, tensor_type, M)
   coords = random.normal(rng_key, ([M.dim]*sum(tensor_type)))
   T = Tensor(coords, TkTpM=TkTpM)
 
-  # Evaluate it on some cotangent and tangent vectors
+  # Create another tensor
   tensor_type = TensorType(0, 5)
   TkTpM = TensorSpace(p, tensor_type, M)
   coords = random.normal(rng_key, ([M.dim]*sum(tensor_type)))
@@ -627,7 +627,6 @@ def lie_derivative_tests():
 
 def run_all():
   jax.config.update("jax_enable_x64", True)
-
   alternating_tests()
   elementary_alternating_tensor_tests()
   determinant_tests()

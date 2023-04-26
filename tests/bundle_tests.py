@@ -196,7 +196,7 @@ def frame_bundle_tests():
   # s2 = AutonomousFrame(get_vector_field_fun(M.dimension, k2), M)
 
   # Check the right action map of the frame bundle
-  right_action_map = s1.frame_bundle.get_right_action_map()
+  right_action_map = s1.frame_bundle.get_action_map(right=True)
   s2 = right_action_map((s1, g))
 
 
@@ -290,7 +290,6 @@ def frame_bundle_tests_2():
 
   # Check that s_tilde is right-left equivariant
   theta_right = x.frame_bundle.get_action_map(right=True)
-  theta_left = x.frame_bundle.get_action_map(right=False)
 
   # s_tilde(x*g) = g^{-1}s_tilde(x)
   xg = theta_right((x, g))
@@ -313,11 +312,9 @@ def frame_bundle_tests_2():
   assert jnp.allclose(test1.x, test2.x)
   assert jnp.allclose(test1.x, sp.x)
 
-  import pdb; pdb.set_trace()
-
 def run_all():
-  # tangent_bundle_tests()
-  # frame_bundle_tests()
+  tangent_bundle_tests()
+  frame_bundle_tests()
   frame_bundle_tests_2()
 
 if __name__ == "__main__":

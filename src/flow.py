@@ -13,6 +13,7 @@ from src.section import *
 from src.lie_group import *
 from src.vector_field import *
 from src.bundle import *
+from src.lie_algebra import *
 import src.util as util
 import diffrax
 
@@ -172,7 +173,7 @@ class FlowInducedByGroupAction(Flow):
     X: An element of the Lie algebra of G that determines one parameter subgroup
     right_action: Whether or not to use the right group action on the manifold
   """
-  def __init__(self, M: Manifold, G: LieGroup, X: TangentVector, right_action: Optional[bool]=True):
+  def __init__(self, M: Manifold, G: LieGroup, X: LeftInvariantVectorField, right_action: Optional[bool]=True):
     self.manifold = M
     self.G = G
     self.lieG = self.G.get_lie_algebra()
@@ -197,7 +198,7 @@ class FlowInducedByGroupAction(Flow):
     else:
       return self.G.left_action_map(g, self.manifold)(p)
 
-  def infinitesmal_generator(self, p: Point) -> TangentVector:
+  def infinitesmal_generator(self, p: Point) -> VectorField:
     """Get the tangent vector for p.  This is d(theta^(p))_e(X_e)
     Basially pushforward of X_e through the map theta^(p): h |--> p*h
 
@@ -224,7 +225,7 @@ def get_infinitesmal_generator_map(G: LieGroup, M: Manifold, right_action: Optio
     V(p)
   """
   assert isinstance(G, LieGroup)
-  def theta_hat(X):
+  def theta_hat(X: LeftInvariantVectorField):
     flow = FlowInducedByGroupAction(M, G, X, right_action=right_action)
     class InfinitesmalGeneratorVectorField(VectorField):
       def apply_to_point(self, p: Point) -> TangentVector:
