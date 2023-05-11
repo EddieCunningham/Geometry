@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import abc
 from src.set import *
 from src.map import *
+from src.vector import *
 from src.manifold import *
 import src.util as util
 import copy
@@ -109,7 +110,7 @@ class Section(Map[Input,Output], abc.ABC):
       fX
     """
     is_map = isinstance(f, Map)
-    is_scalar = f in Reals(dimension=1)
+    is_scalar = f in EuclideanSpace(dimension=1)
 
     assert is_map or is_scalar
 
@@ -117,7 +118,7 @@ class Section(Map[Input,Output], abc.ABC):
       def __init__(self, X, pi):
         self.X = X
         self.lhs = f
-        self.is_float = f in Reals(dimension=1)
+        self.is_float = f in EuclideanSpace(dimension=1)
         Section.__init__(self, pi)
 
       def apply_to_point(self, p: Input) -> Output:

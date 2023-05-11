@@ -2,7 +2,7 @@ from functools import partial
 from typing import Callable, List, Optional, Tuple
 import src.util
 from functools import partial
-from copy import deepcopy
+import copy
 import jax.numpy as jnp
 import abc
 from src.set import *
@@ -325,7 +325,7 @@ def internal_semidirect_product(N: LieGroup, H: LieGroup) -> LieGroup:
   Returns:
     NH: The semi-direct product of N and H
   """
-  H_copy = deepcopy(H)
+  H_copy = copy.copy(H)
 
   # Change the left action map of H to the conjugate map
   def left_action_map(self, g: Point, M: Manifold):

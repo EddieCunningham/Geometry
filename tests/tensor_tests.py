@@ -1,6 +1,7 @@
 from functools import partial
 from typing import Callable
 from typing import NewType
+from src.manifold import Chart
 import src.util
 import jax
 import jax.numpy as jnp
@@ -14,7 +15,7 @@ from src.manifold import *
 from src.vector_field import *
 from src.instances.manifolds import *
 from src.instances.lie_groups import *
-from src.instances.vector_fields import *
+from src.instances.parametric_fields import *
 from src.section import *
 from src.tensor import *
 import nux
@@ -53,6 +54,16 @@ def cotangent_tensor_product_test():
     basis = TkTpM.get_basis()
     dual_basis = TkTpM.get_dual_basis()
 
+    # def test_vmap(E, e):
+    #   elements = e.decompose()
+    #   coordinate = T(*elements)
+    #   term = coordinate*E
+    #   return term.xs[0]
+
+    # out = jax.vmap(test_vmap)(basis, dual_basis)
+
+    # import pdb; pdb.set_trace()
+
     T_reconstr = None
     for E, e in tqdm.tqdm(list(zip(basis, dual_basis))):
       elements = e.decompose()
@@ -69,19 +80,11 @@ def cotangent_tensor_product_test():
   # Do this by creating a manifold which uses a different set of charts
   class SphereCustomChart(Sphere):
 
-    def get_atlas(self):
-      atlas = super().get_atlas()
-
-      # Create a diffeomorphism that we can compose with the regular chart
+    def get_chart_for_point(self, p: Point) -> Chart:
       _phi = get_chart_fun(dimension=self.dimension, rng_key=rng_key, linear=True)
       phi = Diffeomorphism(_phi, domain=EuclideanManifold(dimension=self.dimension), image=EuclideanManifold(dimension=self.dimension))
-
-      new_charts = []
-      for chart in atlas.charts:
-        new_chart = compose(phi, chart)
-        new_charts.append(new_chart)
-
-      return Atlas(new_charts)
+      chart = super().get_chart_for_point(p)
+      return compose(phi, chart)
 
   M2 = SphereCustomChart(dim=M.dimension)
 
@@ -215,13 +218,13 @@ def tensor_field_tests():
   X4p = X4(p)
 
   # Apply a function to the tensor
-  f = Map(lambda x: x.sum(), domain=M, image=Reals())
+  f = Map(lambda x: x.sum(), domain=M, image=EuclideanManifold(dimension=1))
   out1 = (f*T)(p)(X1(p), X2(p), X3(p))
   out2 = (f(p))*(T(p)(X1(p), X2(p), X3(p)))
   assert jnp.allclose(out1, out2)
 
   # Check that the tensor field is multilinear over functions
-  f2 = Map(lambda x: jnp.linalg.norm(jnp.sin(x)), domain=M, image=Reals())
+  f2 = Map(lambda x: jnp.linalg.norm(jnp.sin(x)), domain=M, image=EuclideanManifold(dimension=1))
   out1 = T(X1, f*X2 + f2*X4, X3)(p)
   out2 = f(p)*T(X1, X2, X3)(p) + f2(p)*T(X1, X4, X3)(p)
   assert jnp.allclose(out1, out2)
@@ -271,7 +274,7 @@ def tensor_field_tests():
   # tensor_type = TensorType(0, 3)
   # T = AutonomousTensorField(get_tensor_field_fun(N, tensor_type, k3), tensor_type, N)
 
-  f = Map(lambda x: x.sum(), domain=N, image=Reals())
+  f = Map(lambda x: x.sum(), domain=N, image=EuclideanManifold(dimension=1))
 
   Tp = T(Fp)
 

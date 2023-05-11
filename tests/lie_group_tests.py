@@ -12,7 +12,6 @@ from src.instances.manifolds import *
 from src.instances.lie_groups import *
 import src.util as util
 
-
 def general_linear_test(group, g, h, l, M, p):
   assert (g in group) and (h in group) and (l in group)
 

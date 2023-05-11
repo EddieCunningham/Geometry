@@ -5,6 +5,7 @@ from functools import partial, reduce
 import jax.numpy as jnp
 import jax
 from src.set import *
+from src.vector import *
 import abc
 import src.util as util
 
@@ -191,7 +192,7 @@ class Map(Generic[Input,Output]):
       sum of maps
     """
     is_map = isinstance(g, Map)
-    is_scalar = g in Reals(dimension=1)
+    is_scalar = g in EuclideanSpace(dimension=1)
     assert is_map or is_scalar
 
     if is_map:
@@ -229,7 +230,7 @@ class Map(Generic[Input,Output]):
       af
     """
     is_map = isinstance(a, Map)
-    is_scalar = a in Reals(dimension=1)
+    is_scalar = a in EuclideanSpace(dimension=1)
     assert is_map or is_scalar
 
     def new_f(p, inverse=False):
@@ -282,7 +283,7 @@ class LinearMap(Map[Input,Output]):
     image: Where the map goes to.
   """
 
-  def determinant(self) -> Coordinate:
+  def determinant(self) -> "Coordinate":
     """Get the determinant for this linear map.  This is
     invariant to the choice of coordinates that are used.
 
@@ -385,7 +386,7 @@ class Function(Map[Input,Output]):
     domain: A set that the input to map lives in.
     image: Where the map goes to.
   """
-  def __init__(self, f: Callable[[Reals],Reals], domain: Reals, image: Reals):
+  def __init__(self, f: Callable[[EuclideanSpace],EuclideanSpace], domain: EuclideanSpace, image: EuclideanSpace):
     """Creates a new function.
 
     Args:
@@ -393,8 +394,8 @@ class Function(Map[Input,Output]):
       domain: Must be a set of Real numbers.
       image: Must be a set of Real numbers.
     """
-    assert isinstance(domain, Reals)
-    assert isinstance(image, Reals)
+    assert isinstance(domain, EuclideanSpace)
+    assert isinstance(image, EuclideanSpace)
     super().__init__(f, domain=domain, image=image)
 
 class _InvertibleMixin():

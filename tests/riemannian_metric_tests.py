@@ -13,7 +13,7 @@ from src.manifold import *
 from src.vector_field import *
 from src.instances.manifolds import *
 from src.instances.lie_groups import *
-from src.instances.vector_fields import *
+from src.instances.parametric_fields import *
 from src.section import *
 from src.tensor import *
 from src.lie_derivative import *
@@ -96,13 +96,14 @@ def example_13p11():
   g = pullback_tensor_field(F, g_)
 
   # Get the coordinate function differentials of M
+  chart = M.get_chart_for_point(p)
   u_mask = jnp.zeros(M.dimension, dtype=bool)
   u_mask = u_mask.at[0].set(True)
-  u = M.atlas.charts[0].get_slice_chart(mask=u_mask)
+  u = chart.get_slice_chart(mask=u_mask)
 
   v_mask = jnp.zeros(M.dimension, dtype=bool)
   v_mask = v_mask.at[1].set(True)
-  v = M.atlas.charts[0].get_slice_chart(mask=v_mask)
+  v = chart.get_slice_chart(mask=v_mask)
 
   # Helper for function differential
   d = lambda f: as_tensor_field(FunctionDifferential(f))
@@ -154,7 +155,7 @@ def gradient_tests():
   assert jnp.allclose(X(p).x, X_reconstr(p).x)
 
   # Test the gradient
-  f = Map(lambda x: jnp.cos(x).sum(), domain=M, image=Reals())
+  f = Map(lambda x: jnp.cos(x).sum(), domain=M, image=EuclideanManifold(dimension=1))
   grad_f = gradient_vector_field(f, g)
 
   test1 = flat(grad_f)(X)

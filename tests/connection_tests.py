@@ -14,7 +14,7 @@ from src.manifold import *
 from src.vector_field import *
 from src.instances.manifolds import *
 from src.instances.lie_groups import *
-from src.instances.vector_fields import *
+from src.instances.parametric_fields import *
 from src.section import *
 from src.tensor import *
 from src.lie_derivative import *

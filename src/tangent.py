@@ -48,11 +48,7 @@ class TangentVector(Vector):
     # and its coordinates
     self.p = self.TpM.p
 
-  @property
-  def p_hat(self):
-    if hasattr(self, "_p_hat") == False:
-      self._p_hat = self.phi(self.p)
-    return self._p_hat
+    self.p_hat = self.phi(self.p)
 
   def __call__(self, f: Function) -> Coordinate:
     """Apply the tangent vector to f.
@@ -101,6 +97,7 @@ class TangentSpace(VectorSpace):
 
     # Keep track of the chart function for the manifold
     self.phi = self.manifold.get_chart_for_point(self.p)
+    assert self.phi is not None
     super().__init__(dimension=self.manifold.dimension)
 
   def __eq__(self, other: "TangentSpace") -> bool:
@@ -224,6 +221,7 @@ class VectorField(Section[Point,TangentVector], abc.ABC):
     Returns:
       A list of coordinate functions
     """
+
     # Get the coordinate (co)frame over the manifold
     coordinate_frame = StandardCoordinateFrame(self.manifold)
     basis_vector_fields = coordinate_frame.to_vector_field_list()
@@ -298,7 +296,7 @@ class TangentBasis(VectorSpaceBasis):
     Returns:
       A tangent vector
     """
-    assert v in Reals(dimension=self.TpM.manifold.dimension)
+    assert v in EuclideanSpace(dimension=self.TpM.manifold.dimension)
 
     mat = jnp.stack([X.x for X in self.basis], axis=1)
     new_v = mat@v
@@ -352,7 +350,7 @@ class TangentBasis(VectorSpaceBasis):
     Returns:
       A tangent vector
     """
-    assert v in Reals(dimension=self.TpM.manifold.dimension)
+    assert v in EuclideanSpace(dimension=self.TpM.manifold.dimension)
 
     ans = v[0]*self.basis[0]
     for i, (vi, ei) in enumerate(zip(v, self.basis)):

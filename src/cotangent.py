@@ -6,10 +6,12 @@ import jax
 import abc
 import jax.numpy as jnp
 from src.set import *
+from src.vector import *
 from src.manifold import *
 from src.map import *
 from src.tangent import *
 from src.vector import *
+from src.instances.manifolds import EuclideanManifold
 import src.util as util
 
 __all__ = ["CotangentVector",
@@ -47,13 +49,7 @@ class CotangentVector(Vector, LinearMap[TangentVector,Coordinate]):
     # and its coordinates
     self.p = coTpM.p
 
-    # self.p_hat = self.phi(self.p)
-
-  @property
-  def p_hat(self):
-    if hasattr(self, "_p_hat") == False:
-      self._p_hat = self.phi(self.p)
-    return self._p_hat
+    self.p_hat = self.phi(self.p)
 
   def __call__(self, v: TangentVector) -> Coordinate:
     """Apply the covector to a tangent vector v
@@ -266,7 +262,7 @@ class CovectorField(Section[Point,CotangentVector], abc.ABC):
     assert isinstance(X, VectorField)
     def fun(p: Point):
       return self(p)(X(p))
-    return Map(fun, domain=self.manifold, image=Reals())
+    return Map(fun, domain=self.manifold, image=EuclideanManifold(dimension=1))
 
   @abc.abstractmethod
   def apply_to_point(self, p: Point) -> CotangentVector:
@@ -374,7 +370,7 @@ class FunctionDifferential(CovectorField):
   """
   def __init__(self, f: Map[Point,Coordinate]):
     assert (f.image.dimension is None) or (f.image.dimension <= 1)
-    assert isinstance(f.image, Reals)
+    assert isinstance(f.image, EuclideanSpace)
     self.function = f
     M = self.function.domain
     super().__init__(M)

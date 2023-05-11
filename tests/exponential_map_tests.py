@@ -14,7 +14,7 @@ from src.manifold import *
 from src.vector_field import *
 from src.instances.manifolds import *
 from src.instances.lie_groups import *
-from src.instances.vector_fields import *
+from src.instances.parametric_fields import *
 from src.section import *
 from src.tensor import *
 from src.lie_derivative import *
@@ -27,7 +27,6 @@ import src.util as util
 from tests.vector_field_tests import get_vector_field_fun
 from tests.tensor_tests import get_tensor_field_fun
 from tests.cotangent_tests import get_chart_fun
-
 
 def one_parameter_subgroup_tests():
 
@@ -146,12 +145,12 @@ def infinitesmal_generator_tests():
   assert jnp.allclose(flow(0.0, p), p)
   assert jnp.allclose(flow(t, flow(s, p)), flow(t + s, p))
 
-  # Check the infinitesmal generator
-  def flow_p(t):
-    return flow(t, p)
-  _, Vp = jax.jvp(flow_p, (0.0,), (1.0,))
+  # # Check the infinitesmal generator
+  # def flow_p(t):
+  #   return flow(t, p)
+  # _, Vp = jax.jvp(flow_p, (0.0,), (1.0,))
 
-  Xhat_p = flow.infinitesmal_generator(p)
+  # Xhat_p = flow.infinitesmal_generator(p)
 
   # Get an element of the Lie algebra of G
   Y_coords = random.normal(k3, (dim**2,))
@@ -209,7 +208,6 @@ def adjoint_representation_tests():
 
   Ye = TangentVector(Y_coords, lieG.TeG)
   Y = lieG.get_left_invariant_vector_field(Ye)
-
 
   # Check the adoint representation
   Ad = G.get_adjoint_representation()

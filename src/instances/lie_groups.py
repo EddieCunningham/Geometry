@@ -1,5 +1,6 @@
 from functools import partial
 from typing import Callable, List, Optional, Tuple, Generic
+from src.manifold import Chart
 import src.util
 from functools import partial
 from copy import deepcopy
@@ -37,19 +38,22 @@ class RealLieGroup(LieGroup):
     Args:
       dimension: Dimension
     """
-    self.space = Reals(dimension=dimension)
+    self.space = EuclideanSpace(dimension=dimension)
     super().__init__(dimension=dimension)
 
   def contains(self, p: Point) -> bool:
     return p in self.space
 
-  def get_atlas(self) -> Atlas:
-    """Return the chart for the Lie group
+  def get_chart_for_point(self, p: Point) -> Chart:
+    """Get a chart to use at point p
+
+    Args:
+      The input point
 
     Returns:
-      atlas: The atlas object
+      The chart that contains p in its domain
     """
-    return Atlas([Chart(phi=lambda x, inverse=False: x, domain=self.space, image=self.space)])
+    return Chart(phi=lambda x, inverse=False: x, domain=self.space, image=self.space)
 
   def get_identity_element(self) -> Point:
     """The identity element
@@ -174,39 +178,50 @@ class GLLieG(GeneralLinearGroup):
     image_check = isinstance(p.image, LieAlgebra)
     return type_check and domain_check and image_check
 
-  def get_atlas(self) -> Atlas:
-    """The chart outputs the flattened matrix
+  # def get_atlas(self) -> Atlas:
+  #   """The chart outputs the flattened matrix
+
+  #   Returns:
+  #     atlas: The atlas object
+  #   """
+  #   from src.lie_algebra import LieAlgebra, LeftInvariantVectorField
+  #   def phi(x, inverse=False):
+  #     if inverse == False:
+  #       assert isinstance(x, LinearMap)
+  #       assert isinstance(x.domain, LieAlgebra)
+  #       assert isinstance(x.image, LieAlgebra)
+
+  #       # Get a basis for the domain's tangent space at e
+  #       basis = x.domain.TeG.get_basis()
+
+  #       Js = []
+  #       for Xe in basis:
+  #         # Get the corresponding left invariant vector fields
+  #         X = x.domain.get_left_invariant_vector_field(Xe)
+
+  #         # Get the coordinates of the map at X
+  #         J = x.get_differential(X).get_coordinates()
+  #         Js.append(J)
+
+  #       test = x(X)(self.G.e)
+  #       import pdb; pdb.set_trace()
+  #       # TODO: FIGURE THIS OUT
+
+  #       return x.ravel()
+  #     return x.reshape((self.N, self.N))
+
+  #   return Atlas([Chart(phi=phi, domain=self, image=EuclideanSpace(dimension=self.dimension))])
+
+  def get_chart_for_point(self, p: Point) -> Chart:
+    """Get a chart to use at point p
+
+    Args:
+      The input point
 
     Returns:
-      atlas: The atlas object
+      The chart that contains p in its domain
     """
-    from src.lie_algebra import LieAlgebra, LeftInvariantVectorField
-    def phi(x, inverse=False):
-      if inverse == False:
-        assert isinstance(x, LinearMap)
-        assert isinstance(x.domain, LieAlgebra)
-        assert isinstance(x.image, LieAlgebra)
-
-        # Get a basis for the domain's tangent space at e
-        basis = x.domain.TeG.get_basis()
-
-        Js = []
-        for Xe in basis:
-          # Get the corresponding left invariant vector fields
-          X = x.domain.get_left_invariant_vector_field(Xe)
-
-          # Get the coordinates of the map at X
-          J = x.get_differential(X).get_coordinates()
-          Js.append(J)
-
-        test = x(X)(self.G.e)
-        import pdb; pdb.set_trace()
-        # TODO: FIGURE THIS OUT
-
-        return x.ravel()
-      return x.reshape((self.N, self.N))
-
-    return Atlas([Chart(phi=phi, domain=self, image=Reals(dimension=self.dimension))])
+    assert 0, "TODO"
 
   def get_identity_element(self) -> Point:
     """The identity matrix
@@ -283,18 +298,21 @@ class GLRn(GeneralLinearGroup):
       det_condition = jnp.abs(jnp.linalg.det(p)) > 1e-5
     return shape_condition and det_condition
 
-  def get_atlas(self) -> Atlas:
-    """The chart outputs the flattened matrix
+  def get_chart_for_point(self, p: Point) -> Chart:
+    """Get a chart to use at point p
+
+    Args:
+      The input point
 
     Returns:
-      atlas: The atlas object
+      The chart that contains p in its domain
     """
     def phi(x, inverse=False):
       if inverse == False:
         return x.ravel()
       return x.reshape((self.N, self.N))
-
-    return Atlas([Chart(phi=phi, domain=self, image=Reals(dimension=self.dimension))])
+    
+    return Chart(phi=phi, domain=self, image=EuclideanSpace(dimension=self.dimension))
 
   def get_identity_element(self) -> Point:
     """The identity matrix
@@ -398,19 +416,22 @@ class OrthogonalGroup(GLRn):
       return True
     return jnp.allclose(jnp.linalg.svd(p, compute_uv=False), 1.0)
 
-  def get_atlas(self) -> Atlas:
-    """The chart outputs the flattened matrix
+  def get_chart_for_point(self, p: Point) -> Chart:
+    """Get a chart to use at point p
+
+    Args:
+      The input point
 
     Returns:
-      atlas: The atlas object
+      The chart that contains p in its domain
     """
     def phi(x, inverse=False):
       if inverse == False:
         return x.ravel()
       return x.reshape((self.N, self.N))
 
-    return Atlas([Chart(phi=phi, domain=self, image=Reals(dimension=self.N**2))])
-
+    return Chart(phi=phi, domain=self, image=EuclideanSpace(dimension=self.N**2))
+  
   def get_lie_algebra(self) -> "LieAlgebra":
     """Get the Lie algebra associated with this Lie group.  This is the
     tangent space at the identity and it is equipped with a Lie bracket.

@@ -5,13 +5,13 @@ import jax.numpy as jnp
 from functools import partial
 from src.set import *
 from src.map import *
+from src.vector import *
 import abc
 import src.util as util
 import itertools
 
 __all__ = ["Chart",
            "SliceChart",
-           "Atlas",
            "Manifold",
            "SubImmersion",
            "apply_map_to_manifold",
@@ -32,9 +32,7 @@ class Manifold(Set, abc.ABC):
     Args:
       dimension: Dimension of the manifold
     """
-    super().__init__()
     self.dimension = dimension
-    self.atlas = self.get_atlas()
 
   def __str__(self) -> str:
     """The string representation of this manifold
@@ -43,15 +41,6 @@ class Manifold(Set, abc.ABC):
       A string
     """
     return f"{type(self)}(dimension={self.dimension})"
-
-  @abc.abstractmethod
-  def get_atlas(self) -> "Atlas":
-    """Construct the atlas for a manifold
-
-    Args:
-      atlas: Atlas providing coordinate representation.
-    """
-    pass
 
   def contains(self, p: Point) -> bool:
     """Checks to see if p exists in the manifold.  This is the case if
@@ -63,10 +52,10 @@ class Manifold(Set, abc.ABC):
     Returns:
       True if p is in the manifold, False otherwise.
     """
-    for c in self.atlas.charts:
-      if p in c.domain:
-        return True
-    return False
+    chart = self.get_chart_for_point(p)
+    if chart is None:
+      return False
+    return True
 
   @property
   def boundary(self) -> "Manifold":
@@ -77,6 +66,7 @@ class Manifold(Set, abc.ABC):
     """
     return EmptySet()
 
+  @abc.abstractmethod
   def get_chart_for_point(self, p: Point) -> "Chart":
     """Get a chart to use at point p
 
@@ -86,7 +76,19 @@ class Manifold(Set, abc.ABC):
     Returns:
       The chart that contains p in its domain
     """
-    return self.atlas.get_chart_for_point(p)
+    assert 0, "Should never get here"
+
+  def get_coordinate_for_point(self, p: Point) -> Coordinate:
+    """Get the coordinates for a point
+
+    Args:
+      The input point
+
+    Returns:
+      The coordinates for p
+    """
+    chart = self.get_chart_for_point(p)
+    return chart(p)
 
 class Chart(Diffeomorphism):
   """A coordinate chart maps between a subset of a manifold and Euclidean space.
@@ -96,7 +98,7 @@ class Chart(Diffeomorphism):
     domain: A set that the input to map lives in.
     image: Where the map goes to.
   """
-  def __init__(self, phi: Callable[[Manifold],Reals], *, domain: Manifold, image: Reals):
+  def __init__(self, phi: Callable[[Manifold],EuclideanSpace], *, domain: Manifold, image: EuclideanSpace):
     """Creates a new function.
 
     Args:
@@ -104,7 +106,7 @@ class Chart(Diffeomorphism):
       domain: Must be a set of Real numbers.
       image: Must be a set of Real numbers.
     """
-    assert isinstance(image, Reals)
+    assert isinstance(image, EuclideanSpace)
     super().__init__(phi, domain=domain, image=image)
 
   def get_slice_chart(self, mask: Coordinate) -> "Chart":
@@ -151,45 +153,6 @@ class SliceChart(Chart):
 
 ################################################################################################################
 
-class Atlas(List[Chart]):
-  """A collection of charts that describe a manifold
-
-  Attributes:
-    charts: A list of charts.
-  """
-  def __init__(self, charts: List[Chart]):
-    """Create an atlas from a bunch of charts
-
-    Args:
-      charts: A list of charts
-    """
-    if isinstance(charts, Chart):
-      charts = [charts]
-
-    self.charts = charts
-
-  def __str__(self):
-    return str(self.chart)
-
-  def __repr__(self):
-    return str(self.charts)
-
-  def get_chart_for_point(self, p: Point) -> Chart:
-    """Find the chart associated with a point
-
-    Args:
-      p: Point on manifold
-
-    Returns:
-      A chart that contains p
-    """
-    for c in self.charts:
-      if p in c.domain:
-        return c
-    assert 0, "p is not on manifold"
-
-################################################################################################################
-
 class SubImmersion(Manifold):
   """The output of F(M) for a smooth map F and smooth manifold M
 
@@ -211,18 +174,20 @@ class SubImmersion(Manifold):
 
     self.F = InvertibleMap(self.F, domain=self.M, image=self)
 
-  def get_atlas(self):
-    """Return the atlas
+  def get_chart_for_point(self, p: Point) -> "Chart":
+    """Get a chart to use at point p
+
+    Args:
+      The input point
 
     Returns:
-      Atlas object
+      The chart that contains p in its domain
     """
-    charts = []
-    for chart_M in self.M.atlas.charts:
-      chart = compose(chart_M, self.F.get_inverse())
-      charts.append(chart)
+    # Pull p back through F
+    finv_p = self.F.inverse(p)
 
-    return Atlas(charts)
+    # Return the chart for finv_p
+    return self.M.get_chart_for_point(finv_p)
 
 def apply_map_to_manifold(F: InvertibleMap, M: Manifold) -> Manifold:
   """Create the manifold F(M).  F: M -> N
@@ -258,35 +223,34 @@ class CartesianProductManifold(Manifold):
     self.dimensions = [M.dimension for M in self.Ms]
     Manifold.__init__(self, dimension=sum(self.dimensions))
 
-  def get_atlas(self) -> Atlas:
-    """Construct the atlas for the cartesian product.  This involves
-    constructing a chart that concatenates the coordinate representation
-    of each manifold.
+  def get_chart_for_point(self, p: Point) -> Chart:
+    """Get a chart to use at point p
 
-    Attributes:
-      atlas: Atlas providing coordinate representation.
+    Args:
+      The input point
+
+    Returns:
+      The chart that contains p in its domain
     """
-    new_charts = []
-    for charts in itertools.product(*[M.atlas.charts for M in self.Ms]):
+    assert len(p) == len(self.Ms)
+    charts = [M.get_chart_for_point(_p) for _p, M in zip(p, self.Ms)]
 
-      def phi(x, inverse=False):
-        if inverse == False:
-          assert len(x) == len(charts)
-          coords = [chart(_x) for _x, chart in zip(x, charts)]
-          return jnp.concatenate(coords, axis=-1)
-        else:
-          # Split the coordinates
-          cum_dims = list(itertools.accumulate(self.dimensions))
-          split_indices = list(zip([0] + cum_dims[:-1], cum_dims))
-          coords = [x[start:end] for start, end in split_indices]
-          assert len(coords) == len(charts)
-          return [chart.inverse(coord) for coord, chart in zip(coords, charts)]
+    # Create the new chart
+    def phi(x, inverse=False):
+      if inverse == False:
+        assert len(x) == len(charts)
+        coords = [chart(_x) for _x, chart in zip(x, charts)]
+        return jnp.concatenate(coords, axis=-1)
+      else:
+        # Split the coordinates
+        cum_dims = list(itertools.accumulate(self.dimensions))
+        split_indices = list(zip([0] + cum_dims[:-1], cum_dims))
+        coords = [x[start:end] for start, end in split_indices]
+        assert len(coords) == len(charts)
+        return [chart.inverse(coord) for coord, chart in zip(coords, charts)]
 
-      domain = set_cartesian_product(*self.Ms)
-      new_chart = Chart(phi=phi, domain=domain, image=Reals(dimension=self.dimension))
-      new_charts.append(new_chart)
-
-    return Atlas(new_charts)
+    domain = set_cartesian_product(*self.Ms)
+    return Chart(phi=phi, domain=domain, image=EuclideanSpace(dimension=self.dimension))
 
 def manifold_cartesian_product(*Ms: List[Manifold]) -> CartesianProductManifold:
   """The cartesian product of manifolds

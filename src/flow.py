@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import abc
 from src.set import *
 from src.map import *
+from src.vector import *
 from src.manifold import *
 from src.tangent import *
 from src.section import *
@@ -14,6 +15,7 @@ from src.lie_group import *
 from src.vector_field import *
 from src.bundle import *
 from src.lie_algebra import *
+from src.instances.manifolds import EuclideanManifold
 import src.util as util
 import diffrax
 
@@ -31,7 +33,7 @@ class IntegralCurve(Map[Coordinate,Point]):
     p0: Point at time t=0
     V: The vector field that generates the curve
     manifold: The manifold that the curve lives on
-    domain: Reals
+    domain: EuclideanManifold
     image: Manifold
   """
   def __init__(self, p0: Point, V: VectorField):
@@ -44,7 +46,7 @@ class IntegralCurve(Map[Coordinate,Point]):
     self.p0 = p0
     self.V = V
     self.manifold = self.V.manifold
-    super().__init__(self.__call__, domain=Reals(), image=self.manifold)
+    super().__init__(self.__call__, domain=EuclideanManifold(dimension=1), image=self.manifold)
 
   def __call__(self, t: Coordinate) -> Point:
     """Evaluate the integral curve at t
@@ -146,7 +148,7 @@ class Flow(Map[Tuple[Coordinate,Point],Point]):
     """
     def theta_p(t: Coordinate) -> Point:
       return self(t, p)
-    return Map(theta_p, domain=Reals(), image=self.manifold)
+    return Map(theta_p, domain=EuclideanManifold(dimension=1), image=self.manifold)
 
   def get_theta_t(self, t: Coordinate) -> Callable[[Point],Point]:
     """Return the map theta_t(p) = theta(t, p)
@@ -287,7 +289,7 @@ class TimeDependentFlow(Map[Tuple[Coordinate,Coordinate,Point],Point]):
     """
     def psi_p(t0: Coordinate, t: Coordinate) -> Point:
       return self(t0, t, p)
-    return Map(psi_p, domain=Reals(), image=self.manifold)
+    return Map(psi_p, domain=EuclideanManifold(dimension=1), image=self.manifold)
 
   def get_psi_t(self, t0: Coordinate, t: Coordinate) -> Callable[[Point],Point]:
     """Return the map psi_t(p) = phi(t, p)

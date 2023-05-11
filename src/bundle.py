@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable, List, Optional, Tuple, Generic
+from typing import Callable, List, Optional, Tuple, Generic, Union
 import src.util as util
 from functools import partial
 from copy import deepcopy
@@ -145,35 +145,6 @@ class FiberBundle(Manifold, abc.ABC):
       fiber_after_trivialization: The fiber part after a local trivialization
     """
     return fiber_after_trivialization
-
-  def get_atlas(self):
-    """Construct the atlas for a manifold.  We'll do this by first applying a
-    local trivialization to get (p, f_hat) where f_hat is already in a Euclidean space.
-    Then we'll apply a chart to p to get (p_hat, f_hat) and return their concatenation.
-
-    Args:
-      atlas: Atlas providing coordinate representation.
-    """
-    new_charts = []
-    for chart in self.manifold.atlas.charts:
-      def phi(inpt, inverse=False):
-        if inverse == False:
-          p, f_hat = self._local_trivialization_map(inpt)
-          p_hat = chart(p)
-          return jnp.concatenate([p_hat, f_hat.ravel()], axis=-1)
-        else:
-          p_hat, f_hat = inpt[:self.manifold.dimension], inpt[self.manifold.dimension:]
-          p = chart(p_hat, inverse=True)
-          return self._local_trivialization_map((p, f_hat), inverse=True)
-
-      domain = copy.copy(self)
-      # domain.manifold = U
-
-      image = EuclideanManifold(dimension=self.dimension)
-      new_chart = Chart(phi, domain=domain, image=image)
-      new_charts.append(new_chart)
-
-    return Atlas(new_charts)
 
   def get_chart_for_point(self, x: Element) -> Chart:
     """Get a chart to use at a point x in the total space.  Do this
@@ -507,7 +478,8 @@ class FrameBundle(PrincipalGBundle):
     Returns:
       True if p is in the bundle, False otherwise.
     """
-    return True # Should we allow vector fields for the right action map?>
+    # return True # Should we allow vector fields for the right action map?
+    assert isinstance(x, TangentBasis)
     out = x.TpM.manifold == self.manifold
     if out == False:
       import pdb; pdb.set_trace()
@@ -549,7 +521,7 @@ class FrameBundle(PrincipalGBundle):
     dim = self.manifold.dimension
     return fiber_after_trivialization.reshape((dim, dim))
 
-  def get_action_map(self, *, right: bool) -> Map[Tuple[Frame,Point],Frame]:
+  def get_action_map(self, *, right: bool) -> Map[Tuple[TangentBasis, Point], TangentBasis]:
     """The right action map of G on M.  This is set to
        a translation map by default.
 
@@ -559,37 +531,36 @@ class FrameBundle(PrincipalGBundle):
     Returns:
       theta
     """
-    def theta(Fg: Tuple[Frame,InvertibleMatrix]) -> Frame:
+    assert isinstance(right, bool)
 
-      class TransformedFrame(Frame):
-
-        def __init__(self, F: Frame, g: InvertibleMatrix, right: bool):
-          self.F = F
-          self.g = g
-          self.right = right
-          super().__init__(F.manifold)
-
-        def apply_to_point(self, p: Point) -> TangentBasis:
-          lt = self.F.frame_bundle.get_local_trivialization_map(p)
-          basis = self.F(p)
-          p, basis_as_matrix = lt(basis)
-          if self.right:
-            new_basis_as_matrix = basis_as_matrix@self.g
-          else:
-            new_basis_as_matrix = self.g@basis_as_matrix
-
-          new_basis = lt.inverse((p, new_basis_as_matrix))
-          return new_basis
+    def theta(Fg: Tuple[TangentBasis, InvertibleMatrix]) -> TangentBasis:
 
       if right:
-        F, g = Fg
+        Fp, g = Fg
       else:
-        g, F = Fg
+        g, Fp = Fg
 
-      assert isinstance(F, Frame)
-      assert isinstance(right, bool)
+      assert isinstance(Fp, TangentBasis)
+      assert isinstance(g, jnp.ndarray)
 
-      return TransformedFrame(F, g, right)
+      p = Fp.TpM.p
+
+      # Get a local trivialization at p
+      lt = self.get_local_trivialization_map(p)
+
+      # Turn the basis into a matrix
+      p, basis_as_matrix = lt(Fp)
+
+      # Apply the transformation
+      if right:
+        new_basis_as_matrix = basis_as_matrix@g
+      else:
+        new_basis_as_matrix = g@basis_as_matrix
+
+      # Get back a basis
+      new_basis = lt.inverse((p, new_basis_as_matrix))
+
+      return new_basis
 
     if right:
       domain = CartesianProductManifold(self, GLRn(dim=self.manifold.dimension))
@@ -711,7 +682,7 @@ class CoframeBundle(FrameBundle):
 #           # forward pass so that we can invert correctly
 #           assert 0
 
-#       new_chart = Chart(phi, domain=self, image=Reals(dimension=self.dimension))
+#       new_chart = Chart(phi, domain=self, image=EuclideanSpace(dimension=self.dimension))
 #       new_charts.append(new_chart)
 
 #     return Atlas(new_charts)

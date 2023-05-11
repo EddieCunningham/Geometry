@@ -95,7 +95,7 @@ class SymmetricTensor(Tensor):
     Returns:
       (aX)_p
     """
-    assert a in Reals(dimension=1)
+    assert a in EuclideanSpace(dimension=1)
     xs = (self.xs[0]*a,) + self.xs[1:]
     return SymmetricTensor(*xs, TkTpM=self.TkTpM)
 
@@ -156,16 +156,16 @@ class SymmetricTensorSpace(TensorSpace):
 
     VectorSpace.__init__(self, dimension=self.dimension)
 
-  def get_atlas(self):
-    """Return the atlas
+  def get_chart_for_point(self, p: Point) -> "Chart":
+    """Get a chart to use at point p
+
+    Args:
+      The input point
 
     Returns:
-      Atlas object
+      The chart that contains p in its domain
     """
-    def chart_fun(v, inverse=False):
-      assert 0, "Need to implement"
-    self.chart = Chart(chart_fun, domain=self, image=Reals(dimension=self.dimension))
-    return Atlas([self.chart])
+    assert 0, "Need to implement"
 
 ################################################################################################################
 
@@ -391,7 +391,7 @@ class SymmetricTensorField(TensorField, abc.ABC):
     """
     def fun(p: Point):
       return self(p)(*[X(p) for X in Xs])
-    return Map(fun, domain=self.manifold, image=Reals())
+    return Map(fun, domain=self.manifold, image=EuclideanManifold(dimension=1))
 
   @abc.abstractmethod
   def apply_to_point(self, p: Point) -> SymmetricTensor:
@@ -515,7 +515,7 @@ class EuclideanMetric(RiemannianMetric):
     """
     def fun(p: Point):
       return self(p)(*[X(p) for X in Xs])
-    return Map(fun, domain=self.manifold, image=Reals())
+    return Map(fun, domain=self.manifold, image=EuclideanManifold(dimension=1))
 
   def apply_to_point(self, p: Point) -> Tensor:
     """Evaluate the tensor field at a point.
@@ -586,6 +586,9 @@ def make_riemannian_manifold(M: Manifold, g: RiemannianMetric) -> RiemannianMani
 
   # Set the Riemannian metric
   riemannian_manifold.g = g
+
+  # Set the atlas
+  riemannian_manifold.get_chart_for_point = M.get_chart_for_point
 
   return riemannian_manifold
 

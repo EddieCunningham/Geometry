@@ -14,7 +14,7 @@ from src.lie_algebra import *
 from src.vector_field import *
 from src.flow import *
 from src.instances.manifolds import *
-from src.instances.vector_fields import *
+from src.instances.parametric_fields import *
 from src.instances.lie_groups import *
 import src.util as util
 
@@ -48,7 +48,7 @@ def run_all():
   F = Diffeomorphism(_F, domain=G, image=G)
 
   _f = lambda x: jnp.linalg.norm(jnp.sin(jnp.arange(16).reshape(4, 4)@(3 + x)**2).ravel())
-  f = Map(_f, domain=G, image=Reals())
+  f = Map(_f, domain=G, image=EuclideanManifold(dimension=1))
 
   # Create a flow
   theta = Flow(G, X)

@@ -135,7 +135,9 @@ class Tensor(MultlinearMap[List[Union[CotangentVector,TangentVector]],Coordinate
     p_hat = self.phi(self.p)
     q_hat = component_function(self.p)
 
-    # TODO: IS THERE A VJP/JVP THAT CAN SPEED THIS UP?
+    # Unless we're working with a vector, directly computing the Jacobians
+    # and then performing a matrix multiplication should be faster than
+    # using nested vmapped jvp/vjp calls.
     dzdx = jax.jacobian(F_hat)(p_hat)
     dxdz = jax.jacobian(F_hat.get_inverse())(q_hat)
 
@@ -163,8 +165,7 @@ class Tensor(MultlinearMap[List[Union[CotangentVector,TangentVector]],Coordinate
     contract = coord_contract + ", " + jacobian_contract + " -> " + output_contract
 
     # Get the coordinates of the output tensor.
-    coords = einops.einsum(*self.xs, *coordinate_transforms, contract)
-    return coords
+    return einops.einsum(*self.xs, *coordinate_transforms, contract)
 
   def __rmul__(self, a: float) -> "Tensor":
     """Multiply the tensor by a scalar
@@ -175,7 +176,7 @@ class Tensor(MultlinearMap[List[Union[CotangentVector,TangentVector]],Coordinate
     Returns:
       (aX)_p
     """
-    assert a in Reals(dimension=1)
+    assert a in EuclideanSpace(dimension=1)
     # Only multiply one of the coordinates by a, otherwise
     # we'd be multiplying the dense coordinates by a more
     # than once!
@@ -301,24 +302,16 @@ class TensorSpace(VectorSpace):
     """
     return Tensor(*xs, TkTpM=self)
 
-  def get_atlas(self):
-    """Return the atlas
+  def get_chart_for_point(self, p: Point) -> "Chart":
+    """Get a chart to use at point p
+
+    Args:
+      The input point
 
     Returns:
-      Atlas object
+      The chart that contains p in its domain
     """
-    def chart_fun(v, inverse=False):
-      assert 0, "Need to implement correctly and make modifications for symmetric and alternating spaces"
-      contract = self.get_coordinate_indices()
-      if inverse == False:
-        assert isinstance(v, self.Element)
-        return v.xs # Returns a list of coordinates
-      else:
-        xs = v
-        return self.get_tensor_at(xs)
-
-    self.chart = Chart(chart_fun, domain=self, image=Reals(dimension=self.dimension))
-    return Atlas([self.chart])
+    assert 0, "Need to implement"
 
   def get_basis(self, dual: Optional[bool]=False) -> List[Tensor]:
     """Get a basis of vectors for this tensor space
@@ -711,7 +704,7 @@ class TensorField(Section[Point,Tensor], abc.ABC):
     """
     def fun(p: Point):
       return self(p)(*[X(p) for X in Xs])
-    return Map(fun, domain=self.manifold, image=Reals())
+    return Map(fun, domain=self.manifold, image=EuclideanManifold(dimension=1))
 
   @abc.abstractmethod
   def apply_to_point(self, p: Point) -> Tensor:
@@ -752,7 +745,7 @@ class TensorField(Section[Point,Tensor], abc.ABC):
       fX
     """
     is_map = isinstance(f, Map)
-    is_scalar = f in Reals(dimension=1)
+    is_scalar = f in EuclideanSpace(dimension=1)
 
     assert is_map or is_scalar
 
@@ -761,7 +754,7 @@ class TensorField(Section[Point,Tensor], abc.ABC):
         self.T = T
         self.type = tensor_type
         self.lhs = f
-        self.is_float = f in Reals(dimension=1)
+        self.is_float = f in EuclideanSpace(dimension=1)
         Section.__init__(self, pi)
 
       def apply_to_co_vector_fields(self, *Xs: List[Union[VectorField,CovectorField]]) -> Map:
@@ -869,7 +862,7 @@ class TensorFieldProduct(TensorField):
     def fun(p: Point):
       return reduce(lambda x, y: x(p)*y(p), TXs)
 
-    return Map(fun, domain=self.manifold, image=Reals())
+    return Map(fun, domain=self.manifold, image=EuclideanManifold(dimension=1))
 
   def apply_to_point(self, p: Point) -> Tensor:
     """Evaluate the tensor field at a point.
@@ -1043,3 +1036,80 @@ def pullback_tensor_field(F: Map, T: TensorField) -> PullbackTensorField:
   return PullbackTensorField(F, T)
 
 ################################################################################################################
+
+if __name__ == "__main__":
+  from debug import *
+  import jax.random as random
+  from src.instances.lie_groups import GLRn
+  import nux
+  rng_key = random.PRNGKey(0)
+  k1, k2, k3 = random.split(rng_key, 3)
+
+  # Construct a manifold
+  M = GLRn(dim=3)
+  p = random.normal(k1, (M.N, M.N))
+
+  # Try changing the coordinates of a 2 tensor
+  tensor_type = TensorType(3, 0)
+  TkTpM = TensorSpace(p, tensor_type, M)
+  coords = random.normal(k2, [M.dimension]*sum(tensor_type))
+  T = Tensor(coords, TkTpM=TkTpM)
+
+  # Construct a new coordinate function
+  def _F(x, inverse=False):
+    A = random.normal(k3, (M.N, M.N))
+    A_inv = jnp.linalg.inv(A)
+    nonlin = lambda x, inverse=False: nux.SneakyReLU(alpha=1.0)(x, inverse=inverse)[0]
+    if inverse == False:
+      return nonlin(A@x).ravel()
+    else:
+      return A_inv@nonlin(x.reshape((M.N, M.N)), inverse=True)
+  F = Chart(_F, domain=M, image=EuclideanManifold(M.dimension))
+
+  q = F(p)
+
+  out = T.get_coordinates_unvectorized(F)
+
+  p_hat = T.phi(p)
+  F_phiinv = compose(F, T.phi.get_inverse())
+  phi_Finv = F_phiinv.get_inverse()
+
+  def contravariant_transform(T_coords):
+    # This transforms coordinates contravariantly
+    return jax.jvp(F_phiinv.f, (p_hat,), (T_coords,))[1]
+
+  def covariant_transform(T_coords):
+    # This transforms coordinates covariantly
+    _, vjp = jax.vjp(phi_Finv.f, p_hat)
+    return vjp(T_coords)[0]
+
+  # For higher order tensors, we need to vmap over the axes that we're
+  # not transforming.  To do this, we need functions that are vmapped
+  # over all axes except one.
+  def vmap_helper(f, start_axis, end_axis):
+    if start_axis == end_axis:
+      pass
+
+  jax.vmap(jax.vmap(jax.vmap(f, in_axes=1, out_axes=1), in_axes=2, out_axes=2), in_axes=3, out_axes=3)
+  jax.vmap(jax.vmap(jax.vmap(f, in_axes=0, out_axes=0), in_axes=1, out_axes=1), in_axes=3, out_axes=3)
+  jax.vmap(jax.vmap(jax.vmap(f, in_axes=1, out_axes=1), in_axes=2, out_axes=2), in_axes=3, out_axes=3)
+  jax.vmap(jax.vmap(jax.vmap(f, in_axes=1, out_axes=1), in_axes=2, out_axes=2), in_axes=3, out_axes=3)
+
+
+  def vmap_all_but_i(f, i, max_axes):
+    # Apply vmap to all axes except i
+    vmapped_f = f
+    for j in range(max_axes):
+      if j != i:
+        vmapped_f = jax.vmap(vmapped_f, in_axes=j, out_axes=j)
+    return vmapped_f
+
+  max_axes = sum(tensor_type)
+  new_coords = coords
+  for i in range(tensor_type.k):
+    new_coords = vmap_all_but_i(contravariant_transform, i, max_axes)(new_coords)
+
+  for i in range(tensor_type.l):
+    new_coords = vmap_all_but_i(covariant_transform, i, max_axes)(new_coords)
+
+  import pdb; pdb.set_trace()

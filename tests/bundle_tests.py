@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 from src.set import *
 from src.map import *
+from src.vector import *
 from src.manifold import *
 from src.tangent import *
 from src.lie_group import *
@@ -20,14 +21,13 @@ from src.instances.lie_groups import *
 import src.util as util
 from tests.cotangent_tests import get_chart_fun
 from tests.vector_field_tests import get_vector_field_fun
-from src.instances.vector_fields import AutonomousFrame
-from src.instances.vector_fields import AutonomousVectorField
+from src.instances.parametric_fields import AutonomousFrame
+from src.instances.parametric_fields import AutonomousVectorField
 
 ################################################################################################################
 
 def tangent_bundle_tests():
   jax.config.update("jax_enable_x64", True)
-  from tests.manifold_tests import get_random_point
   # jax.config.update('jax_disable_jit', True)
 
   rng_key = random.PRNGKey(0)
@@ -98,7 +98,7 @@ def tangent_bundle_tests():
 
   # Check that the induced map on sections is linear over functions
   from tests.vector_field_tests import get_vector_field_fun
-  from src.instances.vector_fields import AutonomousVectorField
+  from src.instances.parametric_fields import AutonomousVectorField
   k1, k2 = random.split(rng_key, 2)
 
   # Construct vector fields so that they output the correct shapes
@@ -117,8 +117,8 @@ def tangent_bundle_tests():
     b, A = p
     return (jnp.sin(b)).sum() + (A**2).sum()
 
-  f1 = Map(_f1, domain=M, image=Reals())
-  f2 = Map(_f2, domain=M, image=Reals())
+  f1 = Map(_f1, domain=M, image=EuclideanManifold(dimension=1))
+  f2 = Map(_f2, domain=M, image=EuclideanManifold(dimension=1))
 
   out1 = (F_tilde(f1*s1 + f2*s2))(p)
   out2 = (f1*F_tilde(s1) + f2*F_tilde(s2))(p)
@@ -130,7 +130,6 @@ def tangent_bundle_tests():
 
 def frame_bundle_tests():
   jax.config.update("jax_enable_x64", True)
-  from tests.manifold_tests import get_random_point
   # jax.config.update('jax_disable_jit', True)
 
   rng_key = random.PRNGKey(0)
@@ -188,17 +187,17 @@ def frame_bundle_tests():
 
   # Check that the induced map on sections is linear over functions
   from tests.vector_field_tests import get_vector_field_fun
-  from src.instances.vector_fields import AutonomousFrame
+  from src.instances.parametric_fields import AutonomousFrame
   k1, k2 = random.split(rng_key, 2)
 
   # Construct vector fields so that they output the correct shapes
   s1 = AutonomousFrame(get_chart_fun(M.dimension, k1), M)
-  # s2 = AutonomousFrame(get_vector_field_fun(M.dimension, k2), M)
+  s2 = AutonomousFrame(get_vector_field_fun(M.dimension, k2), M)
 
   # Check the right action map of the frame bundle
   right_action_map = s1.frame_bundle.get_action_map(right=True)
-  s2 = right_action_map((s1, g))
-
+  Fp = s1(p)
+  Fp_g = right_action_map((Fp, g))
 
 
   def F_tilde(s):
@@ -213,8 +212,8 @@ def frame_bundle_tests():
     b, A = p
     return (jnp.sin(b)).sum() + (A**2).sum()
 
-  f1 = Map(_f1, domain=M, image=Reals())
-  f2 = Map(_f2, domain=M, image=Reals())
+  f1 = Map(_f1, domain=M, image=EuclideanManifold(dimension=1))
+  f2 = Map(_f2, domain=M, image=EuclideanManifold(dimension=1))
 
   out1 = (F_tilde(f1*s1 + f2*s2))(p)
   out2 = (f1*F_tilde(s1) + f2*F_tilde(s2))(p)
@@ -249,7 +248,6 @@ def frame_bundle_tests():
 
 def frame_bundle_tests_2():
   jax.config.update("jax_enable_x64", True)
-  from tests.manifold_tests import get_random_point
   # jax.config.update('jax_disable_jit', True)
 
   rng_key = random.PRNGKey(0)
@@ -272,6 +270,7 @@ def frame_bundle_tests_2():
 
   sp = s(p)
   xp = x(p)
+  yp = y(p)
 
   # Check that we can apply a basis to a real vector
   v = random.normal(rng_key, (M.dimension,))
@@ -282,8 +281,7 @@ def frame_bundle_tests_2():
   v_reconstr = xp.inverse(test1)
   assert jnp.allclose(v, v_reconstr)
 
-  def _s_tilde(x: Frame) -> Coordinate:
-    xp = x(p)
+  def _s_tilde(xp: TangentBasis) -> Coordinate:
     return xp.inverse(sp) # In R^n
 
   s_tilde = Map(_s_tilde, domain=x.frame_bundle, image=EuclideanManifold(dimension=M.dimension))
@@ -292,22 +290,21 @@ def frame_bundle_tests_2():
   theta_right = x.frame_bundle.get_action_map(right=True)
 
   # s_tilde(x*g) = g^{-1}s_tilde(x)
-  xg = theta_right((x, g))
+  xg = theta_right((xp, g))
   test1 = s_tilde(xg)
 
-  s_hatx = s_tilde(x)
+  s_hatx = s_tilde(xp)
   test2 = g_inv@s_hatx
   assert jnp.allclose(test1, test2)
 
   # s_bar is constant on every orbit of F(V_p), so it defines a function
   # s: M -> V.
-  def _s_bar(x: Frame) -> TangentVector:
-    xp = x(p)
-    return xp(s_tilde(x))
+  def _s_bar(xp: Frame) -> TangentVector:
+    return xp(s_tilde(xp))
 
   s_bar = Map(_s_bar, domain=x.frame_bundle, image=xp.TpM)
-  test1 = s_bar(x)
-  test2 = s_bar(y)
+  test1 = s_bar(xp)
+  test2 = s_bar(yp)
 
   assert jnp.allclose(test1.x, test2.x)
   assert jnp.allclose(test1.x, sp.x)

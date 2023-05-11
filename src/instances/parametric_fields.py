@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import abc
 from src.set import *
 from src.map import *
+from src.vector import *
 from src.manifold import *
 from src.tangent import *
 from src.cotangent import *

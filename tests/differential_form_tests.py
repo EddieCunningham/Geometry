@@ -14,7 +14,7 @@ from src.manifold import *
 from src.vector_field import *
 from src.instances.manifolds import *
 from src.instances.lie_groups import *
-from src.instances.vector_fields import *
+from src.instances.parametric_fields import *
 from src.section import *
 from src.tensor import *
 from src.lie_derivative import *
@@ -396,13 +396,14 @@ def example_14p18():
   F = Map(_F, domain=M, image=N)
 
   # Get the coordinate functions
+  chart = M.get_chart_for_point(p)
   u_mask = jnp.zeros(M.dimension, dtype=bool)
   u_mask = u_mask.at[0].set(True)
-  u = M.atlas.charts[0].get_slice_chart(mask=u_mask)
+  u = chart.get_slice_chart(mask=u_mask)
 
   v_mask = jnp.zeros(M.dimension, dtype=bool)
   v_mask = v_mask.at[1].set(True)
-  v = M.atlas.charts[0].get_slice_chart(mask=v_mask)
+  v = chart.get_slice_chart(mask=v_mask)
 
   x = Map(lambda x: x[0], domain=N, image=EuclideanManifold(dimension=1))
   y = Map(lambda x: x[1], domain=N, image=EuclideanManifold(dimension=1))

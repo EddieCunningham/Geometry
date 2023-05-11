@@ -32,7 +32,7 @@ def run_all():
   # Some scalars and a function for later
   a, b = random.normal(rng_key, (2,))
   _f = lambda x: jnp.linalg.norm(jnp.sin(jnp.arange(16).reshape(4, 4)@(3 + x)**2).ravel())
-  f = Map(_f, domain=G, image=Reals())
+  f = Map(_f, domain=G, image=EuclideanManifold(dimension=1))
 
   v1, v2, v3 = random.normal(k1, (3, 16))
   V1 = TangentVector(v1, TeG)

@@ -100,7 +100,6 @@ def differential_test(M: Manifold, N: Manifold, p: Point, F: Map, G: Map, f: Fun
 ################################################################################################################
 
 def run_all():
-  from tests.manifold_tests import get_random_point
   # jax.config.update('jax_disable_jit', True)
   jax.config.update("jax_enable_x64", True)
 
@@ -108,10 +107,10 @@ def run_all():
 
   M = EuclideanManifold(dimension=4)
   N = EuclideanManifold(dimension=3)
-  p = get_random_point(M)
+  p = random.normal(rng_key, (M.dimension,))
 
-  f = Map(lambda x: jnp.linalg.norm(x), domain=M, image=Reals())
-  g = Map(lambda x: jax.nn.softmax(x).sum(), domain=M, image=Reals())
+  f = Map(lambda x: jnp.linalg.norm(x), domain=M, image=EuclideanManifold(dimension=1))
+  g = Map(lambda x: jax.nn.softmax(x).sum(), domain=M, image=EuclideanManifold(dimension=1))
   tangent_test(M, p, f, g, rng_key)
 
   rng_key = random.PRNGKey(0)
@@ -125,8 +124,8 @@ def run_all():
     return matrix@x
   G = Map(Gx, domain=N, image=N)
 
-  f = Map(lambda x: jnp.linalg.norm(x), domain=N, image=Reals())
-  g = Map(lambda x: jax.nn.softmax(x).sum(), domain=N, image=Reals())
+  f = Map(lambda x: jnp.linalg.norm(x), domain=N, image=EuclideanManifold(dimension=1))
+  g = Map(lambda x: jax.nn.softmax(x).sum(), domain=N, image=EuclideanManifold(dimension=1))
   differential_test(M, N, p, F, G, f, g, rng_key)
 
   # Test that the tangent bundle works as well
@@ -143,8 +142,8 @@ def run_all():
   M = Sphere(dim=3)
   N = Sphere(dim=3)
   p = p/jnp.linalg.norm(p)
-  f = Map(lambda x: jnp.linalg.norm(x), domain=M, image=Reals())
-  g = Map(lambda x: jax.nn.softmax(x).sum(), domain=M, image=Reals())
+  f = Map(lambda x: jnp.linalg.norm(x), domain=M, image=EuclideanManifold(dimension=1))
+  g = Map(lambda x: jax.nn.softmax(x).sum(), domain=M, image=EuclideanManifold(dimension=1))
   tangent_test(M, p, f, g, rng_key)
 
   def on_sphere(x, inverse=False):
@@ -163,7 +162,6 @@ def run_all():
 
   F = Diffeomorphism(on_sphere, domain=M, image=M)
   differential_test(M, M, p, F, F, f, g, rng_key)
-
 
 if __name__ == "__main__":
   from debug import *

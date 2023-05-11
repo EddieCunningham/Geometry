@@ -1,10 +1,12 @@
 from functools import partial
 from typing import Callable, List, Optional, Generic, Tuple
+from src.manifold import Chart
 import src.util
 import jax.numpy as jnp
 from functools import partial
 from src.set import *
 from src.map import *
+from src.vector import *
 from src.manifold import *
 import src.util as util
 
@@ -12,7 +14,7 @@ __all__ = ["EuclideanManifold",
            "Sphere",
            "RealProjective"]
 
-class EuclideanManifold(Manifold, Reals):
+class EuclideanManifold(Manifold, VectorSpace):
   """R^n
 
   Attributes:
@@ -28,7 +30,7 @@ class EuclideanManifold(Manifold, Reals):
       chart: Optionally give a prefered choice of coordinates
     """
     self.dimension = dimension
-    self.space = Reals(dimension=dimension)
+    self.space = EuclideanSpace(dimension=dimension)
 
     if chart is None:
       self.coordinate_function = lambda x, inverse=False: x
@@ -36,14 +38,18 @@ class EuclideanManifold(Manifold, Reals):
       self.coordinate_function = chart
 
     super().__init__(dimension=dimension)
+    self.global_chart = Chart(phi=self.coordinate_function, domain=self, image=self.space)
 
-  def get_atlas(self):
-    """Return the atlas
+  def get_chart_for_point(self, p: Point) -> Chart:
+    """Get a chart for a point
+
+    Args:
+      p: Point
 
     Returns:
-      Atlas object
+      Chart
     """
-    return Atlas([Chart(phi=self.coordinate_function, domain=self.space, image=self.space)])
+    return self.global_chart
 
   def contains(self, p: Point) -> bool:
     """See if p is in this manifold
@@ -53,45 +59,20 @@ class EuclideanManifold(Manifold, Reals):
     """
     return p in self.space
 
-  def add(self, u: Point, v: Point) -> Point:
-    """We can add 2 vectors together
-
-    Args:
-      u: Vector 1
-      v: Vector 2
+  def get_basis(self) -> VectorSpaceBasis:
+    """Get a basis of vectors for the vector space
 
     Returns:
-      u + v
+      A list of vector that form a basis for the vector space
     """
-    return u + v
-
-  def mult(self, a: float, v: Point) -> Point:
-    """We can multiply a scalar with a vector
-
-    Args:
-      a: Scalar
-      v: Vector 2
-
-    Returns:
-      a*v
-    """
-    return a*v
-
-  def to_vector_space(self, basis: Chart) -> "VectorSpace":
-    """Return a vector space.  Vector spaces are isomorphic to R^n
-    because they just have a different basis
-
-    Args:
-      basis: A chart function that we can use to get basis vectors
-
-    Returns:
-      V
-    """
-    return VectorSpace(dimension=self.dimension, basis=basis)
+    zero = jnp.zeros(self.dimension)
+    G = jax.jacobian(self.coordinate_function)(zero)
+    J = jnp.linalg.inv(G)
+    return [J[:,i] for i in range(self.dimension)]
 
 ################################################################################################################
 
-class Sphere(Manifold, Reals):
+class Sphere(Manifold):
   """An N-sphere
 
   Attributes:
@@ -108,12 +89,30 @@ class Sphere(Manifold, Reals):
     self.dim = dim
     super().__init__(dimension=self.dim)
 
-  def get_atlas(self):
-    charts = []
+  def get_chart_for_point(self, p: Point) -> Chart:
+    """Get a chart to use at point p
 
+    Args:
+      The input point
+
+    Returns:
+      The chart that contains p in its domain
+    """
     north_pole = jnp.zeros(self.dim + 1)
     north_pole = north_pole.at[-1].set(1.0)
     south_pole = -north_pole
+
+    # Check which pole p is closer to
+    pole = "south"
+    if jnp.linalg.norm(p - north_pole) < jnp.linalg.norm(p - south_pole):
+      pole = "north"
+
+    # Only create the charts once
+    if hasattr(self, "north_chart"):
+      if pole == "north":
+        return self.north_chart
+      else:
+        return self.south_chart
 
     # Stereographic projection
     def sigma(x, inverse=False):
@@ -134,7 +133,7 @@ class Sphere(Manifold, Reals):
     class DomainNorth(Sphere):
       def contains(self, p):
         if util.GLOBAL_CHECK == False:
-          return True # Don't bother if we're using diffrax
+          return True  # Don't bother if we're using diffrax
 
         if jnp.allclose(jnp.linalg.norm(p), 1.0) == False:
           return False
@@ -145,13 +144,10 @@ class Sphere(Manifold, Reals):
           return False
         return True
 
-      def get_atlas(self) -> "Atlas":
-        return None
-
     class DomainSouth(Sphere):
       def contains(self, p):
         if util.GLOBAL_CHECK == False:
-          return True # Don't bother if we're using diffrax
+          return True  # Don't bother if we're using diffrax
 
         if jnp.allclose(jnp.linalg.norm(p), 1.0) == False:
           return False
@@ -162,20 +158,23 @@ class Sphere(Manifold, Reals):
           return False
         return True
 
-      def get_atlas(self) -> "Atlas":
-        return None
+    self.north_chart = Chart(phi=sigma, domain=DomainNorth(dim=self.dim), image=EuclideanSpace(dimension=self.dim))
+    self.south_chart = Chart(phi=sigma_tilde, domain=DomainSouth(dim=self.dim), image=EuclideanSpace(dimension=self.dim))
 
-    north_chart = Chart(phi=sigma, domain=DomainNorth(dim=self.dim), image=Reals(dimension=self.dim))
-    south_chart = Chart(phi=sigma_tilde, domain=DomainSouth(dim=self.dim), image=Reals(dimension=self.dim))
-
-    return Atlas([north_chart, south_chart])
+    if pole == "north":
+      return self.north_chart
+    else:
+      return self.south_chart
 
 class RealProjective(Manifold):
-  """RP^n is the set of 1-d linear subspaces of R^n+1.
+  """RP^n is the set of 1-d linear subspaces of R^n+1.  If x in R^n+1, then
+  [x] is the equivalence class of x, where x ~ y if y = cx for some c in R.
 
   Attributes:
     dim: Dimensionality
   """
+  Element = Coordinate
+
   def __init__(self, dim: int):
     """Create an RP^n manifold.
 
@@ -185,22 +184,36 @@ class RealProjective(Manifold):
     self.dim = dim
     super().__init__(dimension=dim)
 
-  def get_atlas(self):
+  def contains(self, p: Point) -> bool:
+    """See if p is in this manifold
 
-    charts = []
+    Args:
+      p: Point
 
-    for i in range(self.dim + 1):
-      # Must exclude origin, but don't worry about this here.
-      U_i = Reals(dimension=self.dim + 1)
+    Returns:
+      True or false
+    """
+    return p.shape == (self.dimension + 1,)
 
-      def phi(x, inverse=False):
-        if inverse == False:
-          return jnp.concatenate([x[...,:i], x[...,i+1:]], axis=-1)/x[...,i]
+  def get_chart_for_point(self, p: Point) -> Chart:
+    """Get a chart to use at point p
 
-        if i == self.dim:
-          return jnp.concatenate([x[...,:i], jnp.ones(x.shape[:-1] + (1,))], axis=-1)
-        return jnp.concatenate([x[...,:i], 1.0, x[...,i:]], axis=-1)
+    Args:
+      The input point
 
-      charts.append(Chart(phi=phi, domain=U_i, image=Reals()))
+    Returns:
+      The chart that contains p in its domain
+    """
+    # Must exclude origin, but don't worry about this here.
+    i = 0
 
-    return Atlas(charts)
+    def phi(x, inverse=False):
+      if inverse == False:
+        return jnp.concatenate([x[...,:i], x[...,i+1:]], axis=-1)/x[...,i]
+
+      if i == self.dim:
+        return jnp.concatenate([x[...,:i], jnp.ones(x.shape[:-1] + (1,))], axis=-1)
+      return jnp.concatenate([x[...,:i], 1.0, x[...,i:]], axis=-1)
+
+    U_i = EuclideanSpace(dimension=self.dimension + 1)
+    return Chart(phi=phi, domain=U_i, image=EuclideanSpace(dimension=self.dimension))

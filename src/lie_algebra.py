@@ -103,7 +103,7 @@ class LeftInvariantCovectorField(CovectorField):
       fX
     """
     is_map = isinstance(f, Map)
-    is_scalar = f in Reals(dimension=1)
+    is_scalar = f in EuclideanSpace(dimension=1)
 
     if is_scalar:
       class LIVFScalarProduct(LeftInvariantCovectorField):
@@ -211,7 +211,7 @@ class LeftInvariantVectorField(VectorField):
       fX
     """
     is_map = isinstance(f, Map)
-    is_scalar = f in Reals(dimension=1)
+    is_scalar = f in EuclideanSpace(dimension=1)
 
     if is_scalar:
       class LIVFScalarProduct(LeftInvariantVectorField):
@@ -321,11 +321,14 @@ class LieAlgebra(Manifold, abc.ABC):
     manifold_check = self.G == p.G
     return type_check and manifold_check
 
-  def get_atlas(self) -> "Atlas":
-    """Construct the atlas for a manifold
+  def get_chart_for_point(self, p: Point) -> "Chart":
+    """Get a chart to use at point p
 
-    Attributes:
-      atlas: Atlas providing coordinate representation.
+    Args:
+      The input point
+
+    Returns:
+      The chart that contains p in its domain
     """
     def chart_fun(v, inverse=False):
       if inverse == False:
@@ -338,8 +341,7 @@ class LieAlgebra(Manifold, abc.ABC):
         ve = TangentVector(v, self.TeG)
         return self.get_left_invariant_vector_field(ve)
 
-    self.chart = Chart(chart_fun, domain=self, image=Reals(dimension=self.dimension))
-    return Atlas([self.chart])
+    return Chart(chart_fun, domain=self, image=EuclideanSpace(dimension=self.dimension))
 
   @abc.abstractmethod
   def bracket(self, X: Point, Y: Point) -> Point:

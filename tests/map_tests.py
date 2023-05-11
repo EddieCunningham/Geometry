@@ -4,6 +4,7 @@ from typing import NewType
 import src.util
 import jax.numpy as jnp
 from src.set import *
+from src.vector import *
 from src.map import *
 from src.instances.manifolds import *
 import src.util as util
@@ -14,8 +15,8 @@ def function_test():
   def f(x):
     return jnp.concatenate([x, 2*x], axis=-1)
 
-  domain = Reals(dimension=2)
-  image = Reals(dimension=4)
+  domain = EuclideanSpace(dimension=2)
+  image = EuclideanSpace(dimension=4)
   function = Function(f, domain=domain, image=image)
 
   x = jnp.array([0.0, 1.0])
@@ -28,8 +29,8 @@ def function_domain_image_test():
   def f(x):
     return jnp.concatenate([x, 2*x], axis=-1)
 
-  domain = Reals(dimension=2)
-  image = Reals(dimension=4)
+  domain = EuclideanSpace(dimension=2)
+  image = EuclideanSpace(dimension=4)
   function = Function(f, domain=domain, image=image)
 
   x = jnp.array([0.0, 1.0])
@@ -52,8 +53,8 @@ def invertible_function_test():
 
   x = jnp.array([0.0, 1.0])
 
-  domain = Reals()
-  image = Reals()
+  domain = EuclideanSpace(dimension=2)
+  image = EuclideanSpace(dimension=2)
   function = InvertibleFunction(f, domain=domain, image=image)
   inverse_function = function.get_inverse()
 

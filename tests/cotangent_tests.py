@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import jax.random as random
 from src.set import *
+from src.vector import *
 from src.map import *
 from src.tangent import *
 from src.cotangent import *
@@ -18,7 +19,7 @@ from src.lie_derivative import *
 import nux
 import src.util as util
 from tests.vector_field_tests import get_vector_field_fun
-from src.instances.vector_fields import AutonomousVectorField, AutonomousCovectorField
+from src.instances.parametric_fields import AutonomousVectorField, AutonomousCovectorField
 
 ################################################################################################################
 
@@ -28,6 +29,7 @@ def get_chart_fun(dimension, rng_key, linear=False):
     # Just use an linear transformation to change coordinates.  Using a flow introduces numerical instabilities.
     def apply_fun(x, inverse=False):
       A = random.normal(rng_key, (dimension, dimension))
+
       if inverse == False:
         return A@x
       return jnp.linalg.inv(A)@x
@@ -69,7 +71,7 @@ def run_all():
 
   basis_vectors = TpRn.get_basis()
   out = [w(v) for v in basis_vectors]
-  Id = Chart(lambda x, inverse=False: x, domain=Rn, image=Reals(Rn.dimension))
+  Id = Chart(lambda x, inverse=False: x, domain=Rn, image=EuclideanManifold(Rn.dimension))
   check = w.get_coordinates(Id)
 
 

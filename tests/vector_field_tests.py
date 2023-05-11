@@ -8,11 +8,12 @@ import jax.random as random
 from src.set import *
 from src.map import *
 from src.tangent import *
+from src.vector import *
 from src.manifold import *
 from src.vector_field import *
 from src.lie_derivative import *
 from src.instances.manifolds import *
-from src.instances.vector_fields import *
+from src.instances.parametric_fields import *
 import src.util as util
 
 ################################################################################################################
@@ -57,8 +58,8 @@ def run_all():
   Y = AutonomousVectorField(get_vector_field_fun(M.dimension, key2), M)
   Z = AutonomousVectorField(get_vector_field_fun(M.dimension, key3), M)
 
-  f = Map(lambda x: jnp.cos(4*x**2 + jnp.sin(x)).sum(), domain=M, image=Reals(dimension=1))
-  g = Map(lambda x: jnp.sin(2*x**2 + jnp.cos(x)).sum(), domain=M, image=Reals(dimension=1))
+  f = Map(lambda x: jnp.cos(4*x**2 + jnp.sin(x)).sum(), domain=M, image=EuclideanSpace(dimension=1))
+  g = Map(lambda x: jnp.sin(2*x**2 + jnp.cos(x)).sum(), domain=M, image=EuclideanSpace(dimension=1))
 
   def on_sphere(x, inverse=False):
     if inverse == False:
@@ -99,7 +100,7 @@ def run_all():
   assert jnp.allclose((X(f))(p), X(p)(f))
 
   # Test the product rule
-  fg = Map(lambda x: f(x)*g(x), domain=M, image=Reals(dimension=1))
+  fg = Map(lambda x: f(x)*g(x), domain=M, image=EuclideanSpace(dimension=1))
   Xfg = X(fg)
   out_Xfg = Xfg(p)
 
