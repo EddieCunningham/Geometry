@@ -457,6 +457,22 @@ def exterior_derivative_test():
   Z = AutonomousVectorField(get_vector_field_fun(M.dimension, k3), M)
   U = AutonomousVectorField(get_vector_field_fun(M.dimension, k4), M)
 
+  # Check that the exterior derivative form works
+  dn1 = ExteriorDerivativeForm(n)
+  dn2 = exterior_derivative(n, brute_force=True)
+
+  test1 = dn1(X, Y, Z)
+  test2 = dn2(X, Y, Z)
+
+  out1 = test1(p)
+  out2 = test2(p)
+  assert jnp.allclose(out1, out2)
+
+  # Check that we can apply to points first
+  check = dn1(p)
+  blah = check(X(p), Y(p), Z(p))
+
+
   # Try making a 0 tensor and using it
   wX = interior_product_form(w, X)
   check = FunctionDifferential(wX)

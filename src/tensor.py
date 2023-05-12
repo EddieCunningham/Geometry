@@ -652,6 +652,7 @@ class TensorBundle(FiberBundle):
     Returns:
       A mapping from the bundle to a product bundle that is locally the same.
     """
+    assert 0, "implement this"
     assert isinstance(T, Tensor)
 
     product_dimensions = [x.size for x in T.xs]
@@ -949,7 +950,7 @@ class PullbackOfTensor(LinearMap[CovariantTensor,CovariantTensor]):
     assert T.type.k == 0
 
     # This is definitely not the most efficient way
-    # TODO: IMPROVE EFFICIENCY USING VJP/JVP FOR TENSORS
+    # TODO: Combine this with the get_coordinates() method?
     jacobian_matrix = self.F.get_pullback(self.p).get_coordinates()
 
     # We need to apply the Jacobian of F to each coordinate axis

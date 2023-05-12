@@ -6,7 +6,6 @@ import src.util
 import jax
 import jax.numpy as jnp
 import jax.random as random
-import tqdm
 from src.set import *
 from src.map import *
 from src.tangent import *
@@ -18,8 +17,6 @@ from src.instances.lie_groups import *
 from src.instances.parametric_fields import *
 from src.section import *
 from src.tensor import *
-import nux
-import src.util as util
 from tests.vector_field_tests import get_vector_field_fun
 from tests.cotangent_tests import get_chart_fun
 
@@ -33,7 +30,7 @@ def cotangent_tensor_product_test():
   p = random.normal(rng_key, (M.dimension + 1,)); p = p/jnp.linalg.norm(p)
 
   # First build a tensor
-  tensor_type = TensorType(3, 3)
+  tensor_type = TensorType(3, 2)
   tensor_coords = random.normal(rng_key, [M.dimension]*sum(tensor_type))
   TkTpM = TensorSpace(p, tensor_type, M)
   T = Tensor(tensor_coords, TkTpM=TkTpM)
@@ -49,32 +46,30 @@ def cotangent_tensor_product_test():
 
   # Try getting a basis for this tensor space and make
   # sure that we can factor the tensor into its basis elements
-  if True:
-    # This test takes a while
-    basis = TkTpM.get_basis()
-    dual_basis = TkTpM.get_dual_basis()
+  basis = TkTpM.get_basis()
+  dual_basis = TkTpM.get_dual_basis()
 
-    # def test_vmap(E, e):
-    #   elements = e.decompose()
-    #   coordinate = T(*elements)
-    #   term = coordinate*E
-    #   return term.xs[0]
+  all_basis_xs = jnp.array([v.xs for v in basis])
+  all_dual_basis_xs = jnp.array([v.xs for v in dual_basis])
 
-    # out = jax.vmap(test_vmap)(basis, dual_basis)
+  def test_vmap(E_xs, e_xs):
+    TkTpM = basis[0].TkTpM
+    E = Tensor(*E_xs, TkTpM=TkTpM)
 
-    # import pdb; pdb.set_trace()
-
-    T_reconstr = None
-    for E, e in tqdm.tqdm(list(zip(basis, dual_basis))):
-      elements = e.decompose()
-      coordinate = T(*elements)
-      term = coordinate*E
-      if T_reconstr is None:
-        T_reconstr = term
+    elements = []
+    for k, x in enumerate(e_xs):
+      if k < T.type.k:
+        elements.append(CotangentVector(x, coTpM))
       else:
-        T_reconstr += term
+        elements.append(TangentVector(x, TpM))
 
-    assert jnp.allclose(T_reconstr.xs[0], T.xs[0])
+    coordinate = T(*elements)
+    term = coordinate*E
+    return term.get_dense_coordinates()
+
+  vmapped_output = jax.vmap(test_vmap)(all_basis_xs, all_dual_basis_xs)
+
+  assert jnp.allclose(vmapped_output.sum(axis=0), T.xs[0])
 
   # Check that we can change coordinates correctly
   # Do this by creating a manifold which uses a different set of charts

@@ -539,7 +539,7 @@ class Coframe(Section[Point,CotangentBasis], abc.ABC):
     Returns:
       List of vector fields
     """
-    class FrameElementCoectorField(CovectorField):
+    class FrameElementCovectorField(CovectorField):
       def __init__(self, i, coframe):
         self.i = i
         self.coframe = coframe
@@ -549,4 +549,4 @@ class Coframe(Section[Point,CotangentBasis], abc.ABC):
         covector_list = self.coframe(p)
         return covector_list[self.i]
 
-    return [FrameElementCoectorField(i, self) for i in range(self.manifold.dimension)]
+    return [FrameElementCovectorField(i, self) for i in range(self.manifold.dimension)]

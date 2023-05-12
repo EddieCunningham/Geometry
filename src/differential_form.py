@@ -42,6 +42,7 @@ __all__ = ["Permutation",
            "InteriorProductForm",
            "interior_product_form",
            "exterior_derivative",
+           "ExteriorDerivativeForm",
            "PullbackDifferentialForm",
            "pullback_differential_form"]
 
@@ -221,16 +222,20 @@ class AlternatingTensor(Tensor):
     TpM = TangentSpace(self.p, self.manifold)
     basis = TpM.get_basis()
 
-    coords = jnp.zeros([self.manifold.dimension]*self.type.l)
+    unique_coords = jnp.zeros([self.manifold.dimension]*self.type.l)
+    coords = jnp.zeros_like(unique_coords)
 
     # The only unique values come from unique combinations of basis vectors
     for iterate in itertools.combinations(enumerate(basis), self.type.l):
       index, Xs = list(zip(*iterate))
       out = self(*Xs)
 
-      # Fill in the other elements of the coordinate array
-      for parity, perm_index in PermutationSet.signed_permutations_of_list(index):
-        coords = coords.at[tuple(perm_index)].set(parity*out)
+      # Update the unique elements of the coordinate array
+      unique_coords = unique_coords.at[index].set(out)
+
+    # The remaining elements are filled in by permuting the unique elements
+    for parity, perm_index in PermutationSet.signed_permutations_of_list(list(range(len(coords.shape)))):
+      coords += parity*unique_coords.transpose(perm_index)
 
     return coords
 
@@ -781,12 +786,6 @@ class DifferentialForm(TensorField, abc.ABC):
 
     out = []
 
-    cf = coordinate_frame
-    a = basis_vector_fields
-
-    df = dual_frame
-    b = basis_covector_fields
-
     # The only unique values come from unique combinations of basis vectors
     for iterate in itertools.combinations(enumerate(zip(basis_vector_fields, basis_covector_fields)), self.type.l):
       index, Ee = zip(*iterate)
@@ -958,7 +957,138 @@ def interior_product_form(w: DifferentialForm, X: VectorField) -> DifferentialFo
 
 ################################################################################################################
 
-def exterior_derivative(w: DifferentialForm) -> DifferentialForm:
+class ExteriorDerivativeForm(DifferentialForm):
+  """The exterior derivative of a differential form
+  """
+  def __init__(self, w: DifferentialForm):
+    """Creates a new exterior derivative differential form
+
+    Args:
+      w: The base differential form
+    """
+    if isinstance(w, CovectorField):
+      w = as_tensor_field(w)
+
+    assert isinstance(w, DifferentialForm)
+    self.w = w
+    self.manifold = self.w.manifold
+    assert self.w.type.k == 0
+    self.type = TensorType(self.w.type.k, self.w.type.l + 1)
+    super().__init__(self.type, self.manifold)
+
+  def apply_to_co_vector_fields(self, *Xs: List[VectorField]) -> Map:
+    """Evaluate this form on vector fields.  We'll try to parallelize
+    as much as we can by using the invariant formula for the exterior derivative
+    but theres not much that we can do to get around the fact that we need to
+    compute a lot of lie brackets and apply the vector field to a lot of functions.
+
+    Args:
+      Xs: A list of vector fields
+
+    Returns:
+      A map over the manifold
+    """
+    assert len(Xs) == self.type.l
+
+    # First, compute all of the form terms that we'll need
+    form_terms = []
+    for i in range(len(Xs)):
+      form_terms.append(self.w(*(Xs[:i] + Xs[i+1:])))
+
+    # Next, compute all of the lie bracket terms that we'll need
+    from src.lie_derivative import lie_bracket
+    lie_bracket_terms = []
+    for i, Xi in enumerate(Xs):
+      for j, Xj in enumerate(Xs):
+        if i < j:
+          sign = (-1.0)**(i + j)
+          lie_bracket_terms.append(sign*lie_bracket(Xi, Xj))
+
+    def fun(p: Point):
+      # Compute the values of each of the tangent vectors
+      Xs_p = [X(p) for X in Xs]
+
+      # Compute the values of the form terms.  This is the first sum in the invariant formula
+      out = 0.0
+      for i, (Xp, wXs) in enumerate(zip(Xs_p, form_terms)):
+        sign = (-1)**i
+        out += sign*Xp(wXs)
+
+      # The only thing that we can vmap is applying the tangent vectors to the form
+      wp = self.w(p)
+
+      # Compute the lie bracket values
+      lie_bracket_vectors = [lie_bracket(p) for lie_bracket in lie_bracket_terms]
+
+      # Extract all of the coordinates from the tangent vectors
+      # IMPORTANT: THIS ASSUMES THAT EVERYTHING USES THE SAME CHART
+      # TODO: Check that everything uses the same chart function?
+      Xs_coords = [Xp.x for Xp in Xs_p]
+
+      # Compute the values of the lie brackets
+      lb_coords = [lb.x for lb in lie_bracket_vectors]
+      lb_coords_iter = iter(lb_coords)
+
+      # Arrange all of the coordinates into a matrix so that we can vmap
+      all_coords = []
+      for i in range(len(Xs)):
+        for j in range(len(Xs)):
+          if i < j:
+            bracket_coords = next(lb_coords_iter)
+            coords = [bracket_coords] + Xs_coords[:i] + Xs_coords[i+1:j] + Xs_coords[j+1:]
+            all_coords.append(coords)
+      all_coords = jnp.array(all_coords)
+
+      # Create the tangent space
+      TpM = TangentSpace(p, self.manifold)
+
+      def apply_w(coords):
+        # Create the tangent vectors for the coordinates
+        vectors = [TangentVector(x, TpM) for x in coords]
+        return wp(*vectors)
+
+      # vmap over all of the terms in the second sum of the invariant
+      # formula for the exterior derivative
+      lb_terms = jax.vmap(apply_w)(all_coords)
+
+      # Aggregate the terms
+      total_out = out + lb_terms.sum()
+      return total_out
+
+    return Map(fun, domain=self.manifold, image=EuclideanManifold(dimension=1))
+
+  def apply_to_point(self, p: Point) -> AlternatingTensor:
+    """We'll apply this form to points by wrapping the apply to vector fields function.
+
+    Args:
+      p: A point on the manifold
+
+    Returns:
+      A dummy alternating tensor
+    """
+    class ExteriorDerivativeTensor(AlternatingTensor):
+      def __init__(self, wrapper_class, TkTpM: AlternatingTensorSpace):
+        self.wrapper_class = wrapper_class
+        super().__init__(None, TkTpM=TkTpM)
+        self.xs = (self.get_dense_coordinates(),)
+
+      def __call__(self, *Xs: List[TangentVector]) -> Coordinate:
+        # Apply the code above
+        class TrivialVF(VectorField):
+          def __init__(self, v):
+            self.tangent_vector = v
+            super().__init__(v.TpM.manifold)
+
+          def apply_to_point(self, p: Point) -> TangentVector:
+            return self.tangent_vector
+
+        Xs_vf = [TrivialVF(X) for X in Xs]
+        return self.wrapper_class.apply_to_co_vector_fields(*Xs_vf)(p)
+
+    TkTpM = AlternatingTensorSpace(p, self.type, self.manifold)
+    return ExteriorDerivativeTensor(self, TkTpM)
+
+def exterior_derivative(w: DifferentialForm, brute_force: bool=False) -> DifferentialForm:
   """Compute the exterior derivative of a differential form.
 
   Args:
@@ -978,17 +1108,21 @@ def exterior_derivative(w: DifferentialForm) -> DifferentialForm:
     dws = [exterior_derivative(_w) for _w in w.ws]
     return LieAlgebraValuedDifferentialForm(dws, w.basis_vector_fields)
 
+  if brute_force == False:
+    # This is much faster than the brute force method
+    return ExteriorDerivativeForm(w)
+  else:
+    # Brute force method
+    coords_and_basis = w.get_coordinate_functions_with_basis()
+    wI, eI = zip(*coords_and_basis)
+    dwI = [FunctionDifferential(_wI) for _wI in wI]
+    dw = None
+    for i, (_dWI, _eI) in enumerate(zip(dwI, eI)):
+      term = wedge_product_form(_dWI, _eI)
+      dw = term if i == 0 else dw + term
 
-  coords_and_basis = w.get_coordinate_functions_with_basis()
-  wI, eI = zip(*coords_and_basis)
-  dwI = [FunctionDifferential(_wI) for _wI in wI]
-  dw = None
-  for i, (_dWI, _eI) in enumerate(zip(dwI, eI)):
-    term = wedge_product_form(_dWI, _eI)
-    dw = term if i == 0 else dw + term
-
-  assert isinstance(dw, DifferentialForm)
-  return dw
+    assert isinstance(dw, DifferentialForm)
+    return dw
 
 ################################################################################################################
 
