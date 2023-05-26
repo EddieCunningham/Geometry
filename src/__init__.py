@@ -4,6 +4,7 @@ from src.set import *
 from src.vector import *
 from src.tangent import *
 from src.section import *
+from src.vector_field import *
 from src.manifold import *
 from src.lie_group import *
 from src.lie_algebra import *
@@ -13,6 +14,7 @@ from src.tensor import *
 from src.lie_derivative import *
 from src.riemannian_metric import *
 from src.differential_form import *
+from src.connection import *
 
 from src.instances.manifolds import *
 from src.instances.lie_groups import *

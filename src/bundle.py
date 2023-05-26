@@ -24,6 +24,7 @@ __all__ = ["FiberBundle",
            "GlobalDifferential",
            "PrincipalGBundle",
            "CotangentBundle",
+           "GeneralLinearBundle",
            "FrameBundle",
            "CoframeBundle"]
 
@@ -137,15 +138,6 @@ class FiberBundle(Manifold, abc.ABC):
     # Return the diffeomorphism
     return Diffeomorphism(Phi, domain=restricted_bundle, image=image)
 
-  def reshape_fiber_trivialization(self, fiber_after_trivialization: Coordinate) -> Coordinate:
-    """The fiber part of a trivialization might be a vector or matrix depending
-    on whether we're using a vector or frame bundle.
-
-    Args:
-      fiber_after_trivialization: The fiber part after a local trivialization
-    """
-    return fiber_after_trivialization
-
   def get_chart_for_point(self, x: Element) -> Chart:
     """Get a chart to use at a point x in the total space.  Do this
     by getting a chart of the local trivialization at x.
@@ -192,6 +184,15 @@ class ProductBundle(CartesianProductManifold, FiberBundle):
       The map x -> p, x in E, p in M
     """
     return ProjectionMap(0, domain=self, image=self.manifold)
+
+  def get_fiber_projection_map(self) -> Map[Element, Point]:
+    """Get the projection map that goes from the total space
+    to the base space
+
+    Returns:
+      The map x -> g, x in E, g in G
+    """
+    return ProjectionMap(1, domain=self, image=self.fiber)
 
   def _local_trivialization_map(self, inpt: Union[Element,Tuple[Point,Fiber]], inverse: bool=False) -> Union[Tuple[Point,Fiber],Element]:
     """Contains the actual implementation of the local trivialization.
@@ -376,6 +377,7 @@ class PrincipalGBundle(FiberBundle, abc.ABC):
   def fundamental_vector_field(self, A: "LeftInvariantVectorField") -> VectorField:
     """The fundamental vector field corresponding to A is defined at
     u as the tangent vector of the curve ug(t) where g(t) = exp(tA).
+    (A_u)* = d(R^u)e(Ae) where Ae is A(e).
 
     Any vector field over the principal G bundle, P, that can be
     generated like this are called "vertical" tangent vectors.
@@ -413,42 +415,111 @@ class PrincipalGBundle(FiberBundle, abc.ABC):
 
     return FundamentalVectorField(self, A)
 
-  def connection_one_form(self, X: VectorField) -> "LeftInvariantVectorField":
-    """The connection 1-form turns a fundamental vector field into a left
-    invariant vector field.
-    w(Astar) = A
-    w: χ(P) -> Lie(G)
-
-    If X is a fundamental vector field, then w(X) returns
-
-    Args:
-      X: A vector field (not necessarily fundamental vector field)
+  @abc.abstractmethod
+  def get_connection_form(self) -> "LieAlgebraValuedDifferentialForm":
+    """Get the connection form for the principal G bundle.
+    This form takes tangent vectors and outputs Lie algebra elements.
 
     Returns:
-      Left invariant vector field corresponding to input
+      Connection form
     """
-    from src.lie_algebra import LeftInvariantVectorField
-    class ConnectionOneForm(LieAlgebraValuedDifferentialForm):
+    pass
 
-      def __init__(self, P: "PrincipalGBundle", X: VectorField):
-        assert isinstance(X, VectorField)
-        assert isinstance(P, PrincipalGBundle)
-        self.X = X
-        self.P = P
-        self.G = self.P.G
-        self.right_action = self.P.get_action_map(right=True)
-        assert isinstance(self.right_action.domain, CartesianProductManifold)
-        assert self.right_action.domain.Ms[0] == self.P
-        assert self.right_action.domain.Ms[1] == self.G
-        assert self.right_action.image == self.P
+  def get_local_connection_form(self) -> "LieAlgebraValuedDifferentialForm":
+    """The local connection form is a Lie algebra valued differential form
+    over the manifold.  Do this by pulling back the connection form through
+    the function phi_inv*proj1 where phi_inv is the inverse of the local
+    trivialization map and proj1 is the projection onto the first component.
+    """
+    from src.lie_algebra import LieAlgebraValuedDifferentialForm, LieAlgebraValuedAlternatingTensor
+    from src.tensor import TensorType
+    from src.differential_form import DifferentialForm
+
+    class LocalConnectionForm(LieAlgebraValuedDifferentialForm):
+      def __init__(self, bundle: "PrincipalGBundle"):
+        self.bundle = bundle
         tensor_type = TensorType(0, 1)
-        super().__init__(tensor_type, self.P, self.G.lieG)
+        DifferentialForm.__init__(self, tensor_type, self.bundle.manifold)
 
       def apply_to_point(self, p: Point) -> LieAlgebraValuedAlternatingTensor:
-        pass
+        # Construct a local trivialization at p
+        phi = self.get_local_trivialization_map(p)
 
+    # Construct a local trivialization around a point
 
-    return ConnectionOneForm(self, X)
+    # Project onto the manifold
+    pass
+
+class TrivialPrincipalGBundle(PrincipalGBundle, ProductBundle):
+  """Trivial principal bundle.  Represents the space of frames that
+  we can have over a manifold.
+
+  Attributes:
+    M: The manifold.
+  """
+  Element = Tuple[Point,InvertibleMatrix]
+
+  def get_connection_form(self) -> "LieAlgebraValuedDifferentialForm":
+    """This is the maurer cartan form
+
+    Returns:
+      Connection form
+    """
+    from src.connection import maurer_cartan_form, pullback_lie_algebra_form
+
+    def _pi2(u):
+      x, g = u
+      return g
+
+    pi2 = Map(_pi2, domain=self, image=self.G)
+    w0 = maurer_cartan_form(self.G)
+    return pullback_lie_algebra_form(pi2, w0)
+
+################################################################################################################
+
+class GeneralLinearBundle(TrivialPrincipalGBundle):
+  """Frame bundle.  Represents the space of frames that
+  we can have over a manifold.
+
+  Attributes:
+    M: The manifold.
+  """
+  Element = Tuple[Point,InvertibleMatrix]
+
+  def __init__(self, M: Manifold):
+    """Creates a new frame bundle.
+
+    Args:
+      M: The manifold.
+    """
+    super().__init__(M, GLRn(dim=M.dimension))
+
+  def get_action_map(self, *, right: bool) -> Map[Tuple[InvertibleMatrix, Point], InvertibleMatrix]:
+    """The right action map of G on M.  This is set to
+       a translation map by default.
+
+    Args:
+      right: Use a right action if true otherwise left action
+
+    Returns:
+      theta
+    """
+    assert isinstance(right, bool)
+
+    def theta(ug: Tuple[InvertibleMatrix, InvertibleMatrix]) -> InvertibleMatrix:
+      u, g = ug if right else ug[::-1]
+      x, a = u
+
+      assert u in self
+      assert g in self.fiber
+
+      return (x, a@g) if right else (x, g@a)
+
+    if right:
+      domain = CartesianProductManifold(self, GLRn(dim=self.manifold.dimension))
+    else:
+      domain = CartesianProductManifold(GLRn(dim=self.manifold.dimension), self)
+    return Map(theta, domain=domain, image=self)
 
 ################################################################################################################
 
@@ -516,10 +587,6 @@ class FrameBundle(PrincipalGBundle):
       TpM = TangentSpace(p, self.manifold)
       basis = TangentBasis([TangentVector(x.ravel(), TpM) for x in xs], TpM)
       return basis
-
-  def reshape_fiber_trivialization(self, fiber_after_trivialization: Coordinate):
-    dim = self.manifold.dimension
-    return fiber_after_trivialization.reshape((dim, dim))
 
   def get_action_map(self, *, right: bool) -> Map[Tuple[TangentBasis, Point], TangentBasis]:
     """The right action map of G on M.  This is set to

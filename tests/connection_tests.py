@@ -252,16 +252,85 @@ def connection_tests():
 
 ################################################################################################################
 
+def general_linear_bundle_tests():
+
+  # Create a time dependent manifold
+  T = EuclideanManifold(dimension=1)
+  M = EuclideanManifold(dimension=2)
+  MT = manifold_cartesian_product(T, M)
+
+  # Get a point on the manifold
+  rng_key = random.PRNGKey(0)
+  t, x = jnp.array([0.2]), random.normal(rng_key, (M.dimension,))
+  p = (t, x)
+
+  # Create a general linear bundle
+  P = GeneralLinearBundle(MT)
+  G = P.G
+
+  # Get a point on P
+  rng_key, _ = random.split(rng_key, 2)
+  g = random.normal(rng_key, (G.N, G.N))
+  u = (p, g)
+
+  # Get the Maurer Cartan form
+  w_mc = P.get_connection_form()
+  w_mc_u = w_mc(u)
+
+  # Create a tangent vector on the bundle
+  rng_key, _ = random.split(rng_key, 2)
+  v_coords, w_coords = random.normal(rng_key, (2, P.dimension))
+  TuP = TangentSpace(u, P)
+  V = TangentVector(v_coords, TuP)
+  W = TangentVector(w_coords, TuP)
+
+  pi = P.get_projection_map()
+  Vtx = pi.get_differential(u)(V)
+
+  pi2 = P.get_fiber_projection_map()
+  Vg = pi2.get_differential(u)(V)
+  Vg_coords = Vg.x.reshape(g.shape)
+
+  # Apply the Maurer Cartan form to the tangent vector
+  w_mcV = w_mc_u(V)
+  Ae = w_mcV.v.x.reshape(g.shape)
+
+  # Check that we get the same result by applying
+  # the version on the Lie group
+  w0 = maurer_cartan_form(G)
+  w0Vg = w0(g)(Vg)
+  w0Vg_coords = w0Vg.v.x.reshape(g.shape)
+
+  assert jnp.allclose(Ae, w0Vg_coords)
+
+  # Check that we can compute the maurer cartan form using the pullback
+  w_mc2 = pullback_lie_algebra_form(pi2, w0)
+  test1 = w_mc(u)(W)
+  test2 = w_mc2(u)(W)
+
+  assert jnp.allclose(test1.v.x, test2.v.x)
+
+  # Proposition 6.8 in fiber bundles and chern weyl theory
+
+
+
+
+  import pdb; pdb.set_trace()
+
+################################################################################################################
+
 def run_all():
   # jax.config.update('jax_disable_jit', True)
   jax.config.update("jax_enable_x64", True)
 
   # lie_algebra_valued_alternating_tensor_tests()
-  lie_algebra_valued_differential_form_tests()
+  # lie_algebra_valued_differential_form_tests()
   # maurer_cartan_form_test()
   # connection_tests()
 
   # connection_tests_frame()
+
+  general_linear_bundle_tests()
 
 if __name__ == "__main__":
   from debug import *

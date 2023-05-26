@@ -155,6 +155,8 @@ class LeftInvariantVectorField(VectorField):
     assert isinstance(G, LieGroup)
     self.v = v
     self.G = G
+    self.TeG = TangentSpace(self.G.e, self.G)
+    assert self.v in self.TeG
     self.manifold = self.G
     super().__init__(self.manifold)
 

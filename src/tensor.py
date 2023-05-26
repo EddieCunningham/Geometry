@@ -925,8 +925,8 @@ class PullbackOfTensor(LinearMap[CovariantTensor,CovariantTensor]):
     """Creates the differential of F at p
 
     Args:
-    F: A map from M->N.
-    p: The point where the differential is defined.
+      F: A map from M->N.
+      p: The point where the differential is defined.
     """
     self.p = p
     self.q = F(self.p)

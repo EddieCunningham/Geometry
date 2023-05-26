@@ -47,7 +47,7 @@ class CotangentVector(Vector, LinearMap[TangentVector,Coordinate]):
 
     # Also keep track of the point that the tangent space is defined on
     # and its coordinates
-    self.p = coTpM.p
+    self.p = self.coTpM.p
 
     self.p_hat = self.phi(self.p)
 

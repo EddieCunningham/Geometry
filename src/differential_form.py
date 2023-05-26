@@ -1102,7 +1102,7 @@ def exterior_derivative(w: DifferentialForm, brute_force: bool=False) -> Differe
     assert isinstance(w, Map)
     return FunctionDifferential(w)
 
-  from src.connection import LieAlgebraValuedDifferentialForm
+  from src.connection import LieAlgebraValuedDifferentialForm, MaurerCartanForm
   if isinstance(w, LieAlgebraValuedDifferentialForm):
     # Apply the exterior derivative to each of the coefficients
     dws = [exterior_derivative(_w) for _w in w.ws]

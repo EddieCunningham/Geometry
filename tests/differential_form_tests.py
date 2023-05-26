@@ -640,6 +640,18 @@ def lie_derivative_tests():
   out2 = test2(X, Y, Z)(p)
   assert jnp.allclose(out1, out2)
 
+  # For a 1-form w, dw(X,Y) = L_X(w)(Y) - L_Y(w)(X) + w([X,Y])
+  dw_XY = exterior_derivative(w)(X, Y)
+  LXwY = lie_derivative(X, w)(Y)
+  LYwX = lie_derivative(Y, w)(X)
+  w_XY = w(lie_bracket(X, Y))
+
+  rhs = dw_XY(p)
+  lhs = LXwY(p) - LYwX(p) + w_XY(p)
+  assert jnp.allclose(lhs, rhs)
+
+  import pdb; pdb.set_trace()
+
 ################################################################################################################
 
 def run_all():

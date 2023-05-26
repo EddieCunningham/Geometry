@@ -26,7 +26,8 @@ import math
 
 __all__ = ["LieAlgebraValuedAlternatingTensor",
            "LieAlgebraValuedDifferentialForm",
-           "maurer_cartan_form"]
+           "maurer_cartan_form",
+           "pullback_lie_algebra_form"]
 
 ################################################################################################################
 
@@ -141,33 +142,114 @@ class LieAlgebraValuedDifferentialForm(DifferentialForm):
 ################################################################################################################
 
 class MaurerCartanForm(LieAlgebraValuedDifferentialForm):
+  """The Maurer Cartan form is a differential form that takes values in the lie algebra
+  of a lie group.  It is defined as the differential of the left translation map.
 
+  Attributes:
+    G: The lie group that the form is defined on
+    lieG: The lie algebra of the lie group
+  """
   def __init__(self, G: LieGroup):
+    """Create a new maurer cartan form.
+
+    Args:
+      G: A lie group
+    """
     self.G = G
     self.lieG = G.lieG
 
-    # Get a basis for lieG
-    basis_vector_fields = self.lieG.get_basis()
+    tensor_type = TensorType(0, 1)
+    DifferentialForm.__init__(self, tensor_type, self.G)
 
-    # Get the dual basis
-    dual_basis_covector_fields = self.lieG.get_dual_basis()
-    dual_basis = [as_tensor_field(w) for w in dual_basis_covector_fields]
-    super().__init__(dual_basis, basis_vector_fields)
-
-  def apply_to_co_vector_fields(self, *Xs: LeftInvariantVectorField) -> Map[Point,LeftInvariantVectorField]:
-    """Evaluate the tensor field on vector fields
+  def apply_to_point(self, g: Point) -> LieAlgebraValuedAlternatingTensor:
+    """
+    (w0)_g = d(L_{g^{-1}})_g.
 
     Args:
-      Xs: A list of vector fields
+      g: Point on the Lie group.
 
     Returns:
-      A map over the manifold
+      Tensor at g.
     """
-    def fun(p: Point):
-      return self(p)(*[X(p) for X in Xs])
-    return Map(fun, domain=self.manifold, image=self.lieG)
+    g_inv = self.G.inverse(g)
+    Lg_inv = self.G.left_translation_map(g_inv)
+    dLg_inv_g = Differential(Lg_inv, g)
+
+    class MCTensor(LieAlgebraValuedAlternatingTensor):
+      def __init__(self, G, dLg_inv_g):
+        self.G = G
+        self.dLg_inv_g = dLg_inv_g
+
+      def __call__(self, Xg: TangentVector) -> LeftInvariantVectorField:
+        assert isinstance(Xg, TangentVector)
+        Xe = dLg_inv_g(Xg)
+        return LeftInvariantVectorField(Xe, self.G)
+
+    return MCTensor(self.G, dLg_inv_g)
 
 def maurer_cartan_form(G: LieGroup) -> "LieAlgebraValuedDifferentialForm":
+  """Return the Maurer cartan form of G
+
+  Args:
+    G: A lie group
+
+  Returns:
+    The Maurer cartan form of G
+  """
   return MaurerCartanForm(G)
 
 ################################################################################################################
+
+class PullbackLieAlgebraForm(LieAlgebraValuedDifferentialForm):
+
+  def __init__(self, F: Map, w: LieAlgebraValuedDifferentialForm):
+    """Create a new pullback form.
+
+    Args:
+      F: A map from a manifold to a manifold
+      w: A lie algebra valued differential form
+    """
+    assert isinstance(F, Map)
+    assert isinstance(w, LieAlgebraValuedDifferentialForm)
+    assert F.image == w.manifold
+
+    self.F = F
+    self.w = w
+
+    tensor_type = w.type
+    DifferentialForm.__init__(self, tensor_type, self.F.domain)
+
+  def apply_to_point(self, p: Point) -> LieAlgebraValuedAlternatingTensor:
+    """Apply the form to a point on the manifold
+
+    Args:
+      A point on the manifold
+
+    Returns:
+      The form at p
+    """
+    class PullbackTensor(LieAlgebraValuedAlternatingTensor):
+      def __init__(self, F, w, p):
+        self.F = F
+        self.w = w
+        self.p = p
+
+      def __call__(self, Xp: TangentVector) -> LeftInvariantVectorField:
+        assert isinstance(Xp, TangentVector)
+        Xq = self.F.get_differential(self.p)(Xp)
+        q = self.F(self.p)
+        return self.w(q)(Xq)
+
+    return PullbackTensor(self.F, self.w, p)
+
+def pullback_lie_algebra_form(F: Map, w: LieAlgebraValuedDifferentialForm) -> "LieAlgebraValuedDifferentialForm":
+  """Return the pullback of the lie algebra valued form w by the map F
+
+  Args:
+    F: A map from a manifold to a manifold
+    w: A lie algebra valued differential form
+
+  Returns:
+    The pullback of w by F
+  """
+  return PullbackLieAlgebraForm(F, w)
